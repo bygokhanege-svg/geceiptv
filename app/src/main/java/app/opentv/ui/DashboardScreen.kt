@@ -33,6 +33,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import app.opentv.R
 import app.opentv.core.AppSettings
 import app.opentv.data.model.Movie
@@ -55,6 +61,8 @@ fun DashboardScreen(
     onOpenSettings: () -> Unit = {},
     onOpenMultiView: () -> Unit = {},
     onAddSource: () -> Unit = {},
+    activeProfileName: String = "Me",
+    onOpenProfiles: () -> Unit = {},
     isTelevision: Boolean = true,
     onNavigateTab: ((Tab) -> Unit)? = null,
     vodViewModel: VodViewModel = viewModel(),
@@ -125,6 +133,8 @@ fun DashboardScreen(
             onOpenSettings = onOpenSettings,
             onOpenMultiView = onOpenMultiView,
             onAddSource = onAddSource,
+            activeProfileName = activeProfileName,
+            onOpenProfiles = onOpenProfiles,
             sources = sourcesUi.sources,
             activeSourceId = activeSourceId,
             onSelectSource = { settings.setActiveSourceId(it.id) },
@@ -879,6 +889,8 @@ private fun PhoneDashboardContent(
     onOpenSettings: () -> Unit,
     onOpenMultiView: () -> Unit,
     onAddSource: () -> Unit,
+    activeProfileName: String,
+    onOpenProfiles: () -> Unit,
     sources: List<Source>,
     activeSourceId: Long,
     onSelectSource: (Source) -> Unit,
@@ -993,7 +1005,19 @@ private fun PhoneDashboardContent(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Sağlayıcı Seçimi Akordiyon Menüsü
+            // 2. ALT GRİD: Logo, Profil, Arama, Çoklu TV ve Ayarlar Barı (Kullanıcı isteğiyle üste abonelik/saat, alta bu bar alındı)
+            PhoneActionBarCard(
+                title = "GECE IPTV",
+                activeProfileName = activeProfileName,
+                onOpenSearch = onOpenSearch,
+                onOpenMultiView = onOpenMultiView,
+                onOpenSettings = onOpenSettings,
+                onOpenProfiles = onOpenProfiles,
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // 3. Sağlayıcı Seçimi Akordiyon Menüsü
             ProviderAccordionBar(
                 sources = sources,
                 activeSourceId = activeSourceId,
@@ -1856,4 +1880,122 @@ private fun ProviderAccordionBar(
 /** Host only — the full URL carries the login and has no place on a settings list. */
 private fun hostOf(url: String): String =
     runCatching { java.net.URI(url).host ?: url }.getOrDefault(url)
+
+/**
+ * Mobil / Tablet Aksiyon Barı:
+ * Logo, Profil ve hızlı işlem butonları (Arama, Çoklu TV, Ayarlar).
+ * Kullanıcının isteği üzerine abonelik kartının hemen altına yerleştirilmiştir.
+ */
+@Composable
+private fun PhoneActionBarCard(
+    title: String,
+    activeProfileName: String,
+    onOpenSearch: () -> Unit,
+    onOpenMultiView: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenProfiles: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color(0xF90A0F1D))
+            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
+            .padding(horizontal = 14.dp, vertical = 6.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().height(46.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            // App Logo & Brand Title + Profile
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clickable(onClick = onOpenProfiles),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF090D16))
+                        .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f), RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Image(
+                        painter = painterResource(R.drawable.ic_opentv_logo),
+                        contentDescription = "Logo",
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = title,
+                            color = Color.White,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF22C55E)),
+                        )
+                    }
+                    if (activeProfileName.isNotBlank() && activeProfileName != "Varsayılan") {
+                        Text(
+                            text = activeProfileName,
+                            color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 10.sp,
+                        )
+                    }
+                }
+            }
+
+            // Action Icons (Arama, Çoklu TV, Ayarlar)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                IconButton(
+                    onClick = onOpenSearch,
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Search,
+                        contentDescription = "Arama",
+                        tint = Color.White.copy(alpha = 0.9f),
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                IconButton(
+                    onClick = onOpenMultiView,
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.GridView,
+                        contentDescription = "Çoklu TV",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                IconButton(
+                    onClick = onOpenSettings,
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Settings,
+                        contentDescription = "Ayarlar",
+                        tint = Color.White.copy(alpha = 0.9f),
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+        }
+    }
+}
 

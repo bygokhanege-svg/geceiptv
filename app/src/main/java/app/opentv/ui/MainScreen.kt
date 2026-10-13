@@ -251,8 +251,8 @@ fun MainScreen(
     )
 
     Column(Modifier.fillMaxSize()) {
-        if (!isTelevision) {
-            // Modern Phone Top App Bar
+        if (!isTelevision && tab != Tab.HOME) {
+            // Modern Phone Top App Bar (Only shown on other tabs; on HOME it is positioned below the subscription card)
             PhoneTopBar(
                 title = "GECE IPTV",
                 activeProfileName = activeProfileName,
@@ -284,6 +284,8 @@ fun MainScreen(
                         onOpenSettings = onOpenSettings,
                         onOpenMultiView = onOpenMultiView,
                         onAddSource = onAddSource,
+                        activeProfileName = activeProfileName,
+                        onOpenProfiles = onOpenProfiles,
                         onNavigateTab = { tab = it },
                     )
                     Tab.LIVE -> HomeScreen(
