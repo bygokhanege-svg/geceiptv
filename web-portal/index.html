@@ -299,16 +299,12 @@
                 <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 14px; padding: 16px; margin-bottom: 20px;">
                     <div style="font-weight: 700; color: #10B981; font-size: 15px; margin-bottom: 4px;">⚡ Hızlı &amp; Güvenilir Aktivasyon</div>
                     <p style="font-size: 13px; color: var(--text-muted); line-height: 1.4;">
-                        WhatsApp veya E-posta üzerinden doğrudan iletişime geçerek Havale / EFT / Papara veya Kripto ile lisansınızı hemen etkinleştirebilirsiniz.
+                        E-posta üzerinden doğrudan iletişime geçerek Havale / EFT / Papara veya Kripto ile lisansınızı hemen etkinleştirebilirsiniz.
                     </p>
                 </div>
 
-                <a href="javascript:void(0)" onclick="openWhatsApp()" class="btn btn-emerald" style="text-decoration: none; margin-bottom: 12px; display: flex; align-items: center; justify-content: center; gap: 8px;">
-                    <span>💬 WhatsApp ile Satın Al &amp; Onayla</span>
-                </a>
-
-                <a href="javascript:void(0)" onclick="openMail()" class="btn" style="background: rgba(255, 255, 255, 0.08); border: 1px solid var(--border-glass); color: white; text-decoration: none; margin-bottom: 16px;">
-                    <span>✉️ E-posta ile Destek &amp; Satın Alma</span>
+                <a href="javascript:void(0)" onclick="openMail()" class="btn btn-emerald" style="text-decoration: none; margin-bottom: 16px; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                    <span>✉️ E-posta ile Satın Al &amp; Onayla (geceiptv@gmail.com)</span>
                 </a>
 
                 <div style="border-top: 1px solid var(--border-glass); padding-top: 16px; margin-top: 10px;">
@@ -325,8 +321,7 @@
     <script>
         const SUPABASE_URL = "https://yhrftdpzrhtoaqohjmhs.supabase.co";
         const SUPABASE_KEY = "sb_publishable_KEatc4BhnVMiAv4LXxbnmQ_lKSINSYd";
-        const WHATSAPP_PHONE = "905065392801";
-        const SUPPORT_EMAIL = "bygokhanege@gmail.com";
+        const SUPPORT_EMAIL = "geceiptv@gmail.com";
 
         // URL query parametrelerini otomatik oku (?mac=...&key=...)
         window.addEventListener('DOMContentLoaded', () => {
@@ -356,18 +351,11 @@
             }
         }
 
-        function openWhatsApp() {
-            const mac = document.getElementById('mac').value.trim() || "BELİRTİLMEDİ";
-            const key = document.getElementById('key').value.trim() || "BELİRTİLMEDİ";
-            const msg = encodeURIComponent(`Merhaba, Gece TV için Premium lisans satın almak istiyorum.\n\nCihaz MAC: ${mac}\nCihaz Kodu: ${key}`);
-            window.open(`https://wa.me/${WHATSAPP_PHONE}?text=${msg}`, '_blank');
-        }
-
         function openMail() {
             const mac = document.getElementById('mac').value.trim() || "BELİRTİLMEDİ";
             const key = document.getElementById('key').value.trim() || "BELİRTİLMEDİ";
-            const subject = encodeURIComponent(`Gece TV Premium Lisans Talebi - MAC: ${mac}`);
-            const body = encodeURIComponent(`Merhaba,\n\nGece TV uygulaması için lisans satın almak istiyorum.\n\nCihaz MAC: ${mac}\nCihaz Kodu: ${key}\n\nÖdeme bilgisi rica ederim.`);
+            const subject = encodeURIComponent(`Gece IPTV Premium Lisans Talebi - MAC: ${mac}`);
+            const body = encodeURIComponent(`Merhaba,\n\nGece IPTV uygulaması için lisans satın almak istiyorum.\n\nCihaz MAC: ${mac}\nCihaz Kodu: ${key}\n\nÖdeme bilgisi rica ederim.`);
             window.location.href = `mailto:${SUPPORT_EMAIL}?subject=${subject}&body=${body}`;
         }
 
