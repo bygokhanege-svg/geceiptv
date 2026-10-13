@@ -5,7 +5,10 @@
  */
 package app.opentv.ui.settings
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,12 +16,19 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -31,20 +41,25 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.opentv.R
 import app.opentv.data.model.LiveStreamFormat
 import app.opentv.data.model.Source
 import app.opentv.data.model.SourceKind
 import app.opentv.ui.SourcesViewModel
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
- * The provider list: what's connected, with the plumbing to add another or remove one. Removing
- * a source deletes its channels and guide with it — the confirm step is here because that is a
- * lot of data to lose to a stray click on a remote.
+ * The provider list: what's connected, with the plumbing to add another, remove one,
+ * and perform live connection speed and diagnostic tests.
  */
 @Composable
 fun ProvidersScreen(
@@ -54,6 +69,7 @@ fun ProvidersScreen(
     viewModel: SourcesViewModel = viewModel(),
 ) {
     val ui by viewModel.ui.collectAsState()
+    val speedTestState by viewModel.speedTest.collectAsState()
     var pendingRemove by remember { mutableStateOf<Source?>(null) }
 
     Column(
@@ -81,8 +97,8 @@ fun ProvidersScreen(
         }
 
         LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.widthIn(max = 760.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.widthIn(max = 840.dp),
         ) {
             items(ui.sources, key = { it.id }) { source ->
                 ProviderRow(
@@ -96,7 +112,88 @@ fun ProvidersScreen(
                         pendingRemove = null
                     },
                     onSetLiveFormat = { viewModel.setLiveFormat(source, it) },
+                    onRunSpeedTest = { viewModel.runSpeedTest(source) },
                 )
+            }
+
+            // Diagnostic Results / Progress Panel
+            item {
+                when (val state = speedTestState) {
+                    is SourcesViewModel.SpeedTestState.Testing -> {
+                        SpeedTestingCard()
+                    }
+                    is SourcesViewModel.SpeedTestState.Success -> {
+                        SpeedTestResultCard(
+                            result = state.result,
+                            onDismiss = { viewModel.resetSpeedTest() },
+                            onRetest = {
+                                val src = ui.sources.find { it.id == state.result.sourceId } ?: ui.sources.firstOrNull()
+                                src?.let { viewModel.runSpeedTest(it) }
+                            },
+                        )
+                    }
+                    is SourcesViewModel.SpeedTestState.Error -> {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(Modifier.padding(16.dp)) {
+                                Text(
+                                    "⚠️ Bağlantı Testi Başarısız: ${state.message}",
+                                    color = MaterialTheme.colorScheme.error,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                Row {
+                                    val src = ui.sources.find { it.id == state.sourceId } ?: ui.sources.firstOrNull()
+                                    if (src != null) {
+                                        Button(onClick = { viewModel.runSpeedTest(src) }) { Text("Yeniden Dene") }
+                                        Spacer(Modifier.width(8.dp))
+                                    }
+                                    OutlinedButton(onClick = { viewModel.resetSpeedTest() }) { Text("Kapat") }
+                                }
+                            }
+                        }
+                    }
+                    is SourcesViewModel.SpeedTestState.Idle -> {
+                        // Global Speed Test Button at the bottom
+                        if (ui.sources.isNotEmpty()) {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(
+                                            "⚡ Sağlayıcı Hız & Bağlantı Tanılaması",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                        )
+                                        Spacer(Modifier.height(2.dp))
+                                        Text(
+                                            "Ping gecikmesi, indirme hızı (Mbps), oluşturma ve bitiş tarihi ile yayın formatlarını test edin.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    Spacer(Modifier.width(16.dp))
+                                    Button(
+                                        onClick = { viewModel.runSpeedTest(ui.sources.first()) },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                                    ) {
+                                        Text("⚡ Hız Testi Başlat", fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -111,8 +208,12 @@ private fun ProviderRow(
     onCancelRemove: () -> Unit,
     onConfirmRemove: () -> Unit,
     onSetLiveFormat: (LiveStreamFormat) -> Unit,
+    onRunSpeedTest: () -> Unit,
 ) {
-    Card {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
         Column(
             Modifier
                 .fillMaxWidth()
@@ -120,9 +221,26 @@ private fun ProviderRow(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(source.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(source.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                        ) {
+                            Text(
+                                source.kind.name,
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(3.dp))
                     Text(
-                        "${source.kind.name} · ${hostOf(source.url)}",
+                        hostOf(source.url),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -138,6 +256,10 @@ private fun ProviderRow(
                     TextButton(onClick = onConfirmRemove) { Text(stringResource(R.string.providers_yes_remove)) }
                     TextButton(onClick = onCancelRemove) { Text(stringResource(R.string.common_cancel)) }
                 } else {
+                    FilledTonalButton(onClick = onRunSpeedTest) {
+                        Text("⚡ Hız Testi")
+                    }
+                    Spacer(Modifier.width(6.dp))
                     TextButton(onClick = onEdit) { Text(stringResource(R.string.common_edit)) }
                     TextButton(onClick = onAskRemove) { Text(stringResource(R.string.common_remove)) }
                 }
@@ -149,6 +271,220 @@ private fun ProviderRow(
                 Spacer(Modifier.height(14.dp))
                 StreamFormatSelector(selected = source.liveFormat, onSelect = onSetLiveFormat)
             }
+        }
+    }
+}
+
+@Composable
+private fun SpeedTestingCard() {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Column(Modifier.padding(20.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(10.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF38BDF8)),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "⚡ Sağlayıcı Bağlantı & Hız Testi Yapılıyor...",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Ping gecikmesi, canlı veri transfer hızı (Mbps), hesap oluşturma/bitiş tarihi ve yayın formatı ölçülüyor. Lütfen bekleyin...",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(14.dp))
+            LinearProgressIndicator(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp)),
+                color = Color(0xFF0284C7),
+            )
+        }
+    }
+}
+
+@Composable
+private fun SpeedTestResultCard(
+    result: SourcesViewModel.SpeedTestResult,
+    onDismiss: () -> Unit,
+    onRetest: () -> Unit,
+) {
+    val dateFormatter = remember { SimpleDateFormat("dd.MM.yyyy", Locale("tr", "TR")) }
+    val createdStr = remember(result.createdAtMillis, result.createdAtRaw) {
+        when {
+            result.createdAtMillis != null && result.createdAtMillis > 0 -> dateFormatter.format(Date(result.createdAtMillis))
+            !result.createdAtRaw.isNullOrBlank() -> result.createdAtRaw
+            else -> "Belirtilmemiş"
+        }
+    }
+    val expiryStr = remember(result.expiryMillis) {
+        when {
+            result.expiryMillis != null && result.expiryMillis > 0 -> dateFormatter.format(Date(result.expiryMillis))
+            else -> "Süresiz"
+        }
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, Color(0xFF0284C7).copy(alpha = 0.5f), RoundedCornerShape(12.dp)),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF0B132B)),
+    ) {
+        Column(Modifier.padding(20.dp)) {
+            // Header Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("⚡", fontSize = 20.sp)
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            "Sağlayıcı Hız & Bağlantı Tanılama Raporu",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                        )
+                        Text(
+                            "${result.sourceName} · ${result.serverHost}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF94A3B8),
+                        )
+                    }
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilledTonalButton(onClick = onRetest) { Text("Yeniden Test Et") }
+                    OutlinedButton(onClick = onDismiss) { Text("Kapat") }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            // Main Stats Grid (Ping & Speed & Formats)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                // Ping Box
+                MetricBox(
+                    title = "GECİKME (PİNG)",
+                    value = "${result.pingMs} ms",
+                    subtext = when {
+                        result.pingMs < 60 -> "🟢 Mükemmel Tepki"
+                        result.pingMs < 130 -> "🟡 Çok İyi"
+                        else -> "🟠 Normal"
+                    },
+                    modifier = Modifier.weight(1f),
+                    accentColor = Color(0xFF22C55E),
+                )
+
+                // Speed Box
+                MetricBox(
+                    title = "BAĞLANTI HIZI",
+                    value = "${result.speedMbps} Mbps",
+                    subtext = when {
+                        result.speedMbps >= 30.0 -> "🚀 4K Ultra HD Hazır"
+                        result.speedMbps >= 12.0 -> "✨ Full HD 1080p Hazır"
+                        else -> "📺 SD / 720p Akıcı"
+                    },
+                    modifier = Modifier.weight(1f),
+                    accentColor = Color(0xFF38BDF8),
+                )
+
+                // Account Dates Box
+                MetricBox(
+                    title = "HESAP TARİHLERİ",
+                    value = expiryStr,
+                    subtext = "Oluşturma: $createdStr",
+                    modifier = Modifier.weight(1.2f),
+                    accentColor = Color(0xFFA855F7),
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // Secondary Details (Stream Formats & Active Connections)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                // Stream Formats Box
+                MetricBox(
+                    title = "YAYIN FORMATI",
+                    value = result.streamFormats.joinToString(", ").ifEmpty { "HLS, TS" },
+                    subtext = "Aktif Tercih: ${result.activeLiveFormat.name}",
+                    modifier = Modifier.weight(1.4f),
+                    accentColor = Color(0xFFF59E0B),
+                )
+
+                // Connections & Status Box
+                MetricBox(
+                    title = "BAĞLANTI DURUMU",
+                    value = "${result.activeConnections ?: 1} / ${result.maxConnections ?: 1} Aktif",
+                    subtext = "${result.status} (Çevrimiçi)",
+                    modifier = Modifier.weight(1f),
+                    accentColor = Color(0xFF10B981),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MetricBox(
+    title: String,
+    value: String,
+    subtext: String,
+    modifier: Modifier = Modifier,
+    accentColor: Color,
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0xFF1E293B).copy(alpha = 0.7f))
+            .border(1.dp, accentColor.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+            .padding(12.dp),
+    ) {
+        Column {
+            Text(
+                title,
+                color = accentColor,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                fontSize = 10.sp,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                value,
+                color = Color.White,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                maxLines = 1,
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(
+                subtext,
+                color = Color(0xFF94A3B8),
+                style = MaterialTheme.typography.bodySmall,
+                fontSize = 11.sp,
+                maxLines = 1,
+            )
         }
     }
 }

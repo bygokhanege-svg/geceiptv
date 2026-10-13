@@ -32,10 +32,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.platform.LocalContext
 import app.opentv.R
+import app.opentv.core.AppSettings
 import app.opentv.data.model.Movie
 import app.opentv.data.model.Series
+import app.opentv.data.model.Source
 import app.opentv.data.parser.displayTitle
+import app.opentv.ui.SourcesViewModel
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
@@ -47,10 +51,21 @@ fun DashboardScreen(
     onOpenSeries: (Series) -> Unit,
     onResume: (mediaKey: String, url: String, title: String) -> Unit,
     onOpenLicense: () -> Unit = {},
+    onOpenSearch: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
+    onOpenMultiView: () -> Unit = {},
+    onAddSource: () -> Unit = {},
     isTelevision: Boolean = true,
     onNavigateTab: ((Tab) -> Unit)? = null,
     vodViewModel: VodViewModel = viewModel(),
+    sourcesViewModel: SourcesViewModel = viewModel(),
 ) {
+    val context = LocalContext.current
+    val settings = remember { AppSettings.get(context) }
+    val activeSourceId by settings.activeSourceId.collectAsState()
+    val sourcesUi by sourcesViewModel.ui.collectAsState()
+    var providerMenuExpanded by remember { mutableStateOf(false) }
+
     val recentMovies by vodViewModel.recentlyAddedMovies.collectAsState()
     val recentSeries by vodViewModel.recentlyAddedSeries.collectAsState()
     val recommendedMovies by vodViewModel.recommendedMovies.collectAsState()
@@ -106,6 +121,13 @@ fun DashboardScreen(
             onOpenSeries = onOpenSeries,
             onResume = onResume,
             onOpenLicense = onOpenLicense,
+            onOpenSearch = onOpenSearch,
+            onOpenSettings = onOpenSettings,
+            onOpenMultiView = onOpenMultiView,
+            onAddSource = onAddSource,
+            sources = sourcesUi.sources,
+            activeSourceId = activeSourceId,
+            onSelectSource = { settings.setActiveSourceId(it.id) },
             onNavigateTab = onNavigateTab,
         )
         return
@@ -269,7 +291,19 @@ fun DashboardScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Sağlayıcı Seçimi Akordiyon Menüsü (Kullanıcı seçebilir ve yeni ekleyebilir)
+            ProviderAccordionBar(
+                sources = sourcesUi.sources,
+                activeSourceId = activeSourceId,
+                onSelectSource = { settings.setActiveSourceId(it.id) },
+                onAddSource = onAddSource,
+                expanded = providerMenuExpanded,
+                onToggleExpand = { providerMenuExpanded = !providerMenuExpanded },
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
 
             // Main Content Area (3 Columns)
             Row(
@@ -308,6 +342,15 @@ fun DashboardScreen(
                     )
                 }
             }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Alt Grid: Ayarlar, Arama, Çoklu TV Özelleştirme
+            BottomActionGrid(
+                onOpenSearch = onOpenSearch,
+                onOpenSettings = onOpenSettings,
+                onOpenMultiView = onOpenMultiView,
+            )
         }
     }
 }
@@ -832,9 +875,17 @@ private fun PhoneDashboardContent(
     onOpenSeries: (Series) -> Unit,
     onResume: (mediaKey: String, url: String, title: String) -> Unit,
     onOpenLicense: () -> Unit,
+    onOpenSearch: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenMultiView: () -> Unit,
+    onAddSource: () -> Unit,
+    sources: List<Source>,
+    activeSourceId: Long,
+    onSelectSource: (Source) -> Unit,
     onNavigateTab: ((Tab) -> Unit)?,
 ) {
     val scrollState = rememberScrollState()
+    var phoneProviderMenuExpanded by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -939,6 +990,18 @@ private fun PhoneDashboardContent(
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Sağlayıcı Seçimi Akordiyon Menüsü
+            ProviderAccordionBar(
+                sources = sources,
+                activeSourceId = activeSourceId,
+                onSelectSource = onSelectSource,
+                onAddSource = onAddSource,
+                expanded = phoneProviderMenuExpanded,
+                onToggleExpand = { phoneProviderMenuExpanded = !phoneProviderMenuExpanded },
+            )
 
             Spacer(modifier = Modifier.height(14.dp))
 
@@ -1286,6 +1349,15 @@ private fun PhoneDashboardContent(
                 }
             }
 
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Alt Grid: Ayarlar, Arama, Çoklu TV Özelleştirme
+            BottomActionGrid(
+                onOpenSearch = onOpenSearch,
+                onOpenSettings = onOpenSettings,
+                onOpenMultiView = onOpenMultiView,
+            )
+
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
@@ -1406,4 +1478,382 @@ private fun PhonePosterCard(
         )
     }
 }
+
+/**
+ * Alt Grid İşlem Paneli:
+ * Ayarlar, Arama ve Çoklu TV Özelleştirme hızlı işlem kartları.
+ * Hem TV kumandası D-Pad ile odaklanabilir (focus border, glow) hem de dokunmatik çalışır.
+ */
+@Composable
+private fun BottomActionGrid(
+    onOpenSearch: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenMultiView: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(64.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        BottomActionCard(
+            title = "Arama",
+            subtitle = "Tüm kanal, film ve dizilerde ara",
+            icon = "🔍",
+            gradientColors = listOf(Color(0xFF0F172A), Color(0xFF1E293B)),
+            borderColor = Color(0xFF38BDF8),
+            modifier = Modifier.weight(1f),
+            onClick = onOpenSearch,
+        )
+        BottomActionCard(
+            title = "Ayarlar",
+            subtitle = "Oynatıcı, ses ve sistem ayarları",
+            icon = "⚙️",
+            gradientColors = listOf(Color(0xFF0F172A), Color(0xFF1E293B)),
+            borderColor = Color(0xFFA855F7),
+            modifier = Modifier.weight(1f),
+            onClick = onOpenSettings,
+        )
+        BottomActionCard(
+            title = "Çoklu TV Özelleştirme",
+            subtitle = "Aynı ekranda birden fazla yayın izle",
+            icon = "📺",
+            gradientColors = listOf(Color(0xFF0F172A), Color(0xFF1E293B)),
+            borderColor = Color(0xFF10B981),
+            modifier = Modifier.weight(1.2f),
+            onClick = onOpenMultiView,
+        )
+    }
+}
+
+@Composable
+private fun BottomActionCard(
+    title: String,
+    subtitle: String,
+    icon: String,
+    gradientColors: List<Color>,
+    borderColor: Color,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+
+    Box(
+        modifier = modifier
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(10.dp))
+            .background(
+                Brush.horizontalGradient(
+                    if (isFocused) listOf(borderColor.copy(alpha = 0.28f), Color(0xFF1E293B))
+                    else gradientColors
+                )
+            )
+            .border(
+                if (isFocused) 2.dp else 1.dp,
+                if (isFocused) borderColor else borderColor.copy(alpha = 0.35f),
+                RoundedCornerShape(10.dp)
+            )
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            )
+            .focusable(interactionSource = interactionSource)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isFocused) borderColor else Color.White.copy(alpha = 0.1f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = icon,
+                        fontSize = 18.sp,
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                    Text(
+                        text = title,
+                        color = if (isFocused) Color.White else MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                    )
+                    Text(
+                        text = subtitle,
+                        color = if (isFocused) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontSize = 9.5.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            Text(
+                text = "▶",
+                color = if (isFocused) borderColor else Color.White.copy(alpha = 0.3f),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+    }
+}
+
+/**
+ * Sağlayıcı Seçimi Akordiyon Menüsü:
+ * Kullanıcının yüklediği sağlayıcıları listeler, aktif olanı seçtirir
+ * ve panelden doğrudan "Yeni Sağlayıcı Ekle" seçeneği sunar.
+ */
+@Composable
+private fun ProviderAccordionBar(
+    sources: List<Source>,
+    activeSourceId: Long,
+    onSelectSource: (Source) -> Unit,
+    onAddSource: () -> Unit,
+    expanded: Boolean,
+    onToggleExpand: () -> Unit,
+) {
+    val activeSource = remember(sources, activeSourceId) {
+        sources.find { it.id == activeSourceId } ?: sources.firstOrNull()
+    }
+
+    val headerInteraction = remember { MutableInteractionSource() }
+    val isHeaderFocused by headerInteraction.collectIsFocusedAsState()
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0xFF0D1527))
+            .border(
+                if (isHeaderFocused) 1.5.dp else 1.dp,
+                if (isHeaderFocused) Color(0xFF38BDF8) else Color(0xFF38BDF8).copy(alpha = 0.25f),
+                RoundedCornerShape(10.dp),
+            )
+    ) {
+        // Accordion Header Bar
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(42.dp)
+                .clickable(
+                    interactionSource = headerInteraction,
+                    indication = null,
+                    onClick = onToggleExpand,
+                )
+                .focusable(interactionSource = headerInteraction)
+                .padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("🌐", fontSize = 16.sp)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    "AKTİF SAĞLAYICI:",
+                    color = Color(0xFF94A3B8),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = activeSource?.name ?: "Yüklü Sağlayıcı Yok",
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                if (activeSource != null) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Color(0xFF0284C7).copy(alpha = 0.25f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                    ) {
+                        Text(
+                            activeSource.kind.name,
+                            color = Color(0xFF38BDF8),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 8.5.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    "(${sources.size} Sağlayıcı)",
+                    color = Color(0xFF64748B),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 10.sp,
+                )
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(if (isHeaderFocused) Color(0xFF0284C7) else Color(0xFF1E293B))
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                ) {
+                    Text(
+                        if (expanded) "Menüyü Kapat ▲" else "Sağlayıcı Değiştir / Ekle ▼",
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+        }
+
+        // Expanded Accordion Panel
+        if (expanded) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF090E1A))
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
+            ) {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    items(sources, key = { it.id }) { src ->
+                        val isSelected = activeSource?.id == src.id
+                        val itemInteraction = remember { MutableInteractionSource() }
+                        val isItemFocused by itemInteraction.collectIsFocusedAsState()
+
+                        Box(
+                            modifier = Modifier
+                                .width(170.dp)
+                                .height(64.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    if (isItemFocused) Color(0xFF0284C7).copy(alpha = 0.35f)
+                                    else if (isSelected) Color(0xFF1E293B)
+                                    else Color(0xFF141D2F)
+                                )
+                                .border(
+                                    if (isItemFocused) 2.dp else if (isSelected) 1.5.dp else 1.dp,
+                                    if (isItemFocused) Color(0xFF38BDF8)
+                                    else if (isSelected) Color(0xFF22C55E)
+                                    else Color.White.copy(alpha = 0.15f),
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .clickable(
+                                    interactionSource = itemInteraction,
+                                    indication = null,
+                                    onClick = { onSelectSource(src) },
+                                )
+                                .focusable(interactionSource = itemInteraction)
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxSize(),
+                                verticalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                ) {
+                                    Text(
+                                        text = src.name,
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    if (isSelected) {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(Color(0xFF22C55E).copy(alpha = 0.2f))
+                                                .padding(horizontal = 4.dp, vertical = 1.dp),
+                                        ) {
+                                            Text(
+                                                "✔ AKTİF",
+                                                color = Color(0xFF22C55E),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontSize = 8.sp,
+                                                fontWeight = FontWeight.Bold,
+                                            )
+                                        }
+                                    }
+                                }
+                                Text(
+                                    text = "${src.kind.name} · ${hostOf(src.url)}",
+                                    color = Color(0xFF94A3B8),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = 9.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+
+                    // Add Provider Card Button
+                    item {
+                        val addInteraction = remember { MutableInteractionSource() }
+                        val isAddFocused by addInteraction.collectIsFocusedAsState()
+
+                        Box(
+                            modifier = Modifier
+                                .width(150.dp)
+                                .height(64.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (isAddFocused) Color(0xFF0284C7).copy(alpha = 0.4f) else Color(0xFF0F172A))
+                                .border(
+                                    if (isAddFocused) 2.dp else 1.dp,
+                                    if (isAddFocused) Color(0xFF38BDF8) else Color(0xFF0284C7).copy(alpha = 0.4f),
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .clickable(
+                                    interactionSource = addInteraction,
+                                    indication = null,
+                                    onClick = onAddSource,
+                                )
+                                .focusable(interactionSource = addInteraction)
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("➕", fontSize = 14.sp)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    "Yeni Sağlayıcı Ekle",
+                                    color = Color(0xFF38BDF8),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Host only — the full URL carries the login and has no place on a settings list. */
+private fun hostOf(url: String): String =
+    runCatching { java.net.URI(url).host ?: url }.getOrDefault(url)
 

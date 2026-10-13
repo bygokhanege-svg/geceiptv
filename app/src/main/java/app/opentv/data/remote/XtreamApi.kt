@@ -63,12 +63,30 @@ class XtreamApi(
             throw XtreamException("Username or password rejected by the server.")
         }
 
+        val serverInfo = body["server_info"]?.jsonObjectOrNull
+        val serverProtocol = serverInfo?.get("server_protocol").asStringOrNull
+        val createdAtSec = userInfo["created_at"].asLongOrNull
+        val createdAtMillis = if (createdAtSec != null && createdAtSec > 0) {
+            if (createdAtSec < 100_000_000_000L) createdAtSec * 1000L else createdAtSec
+        } else null
+        val createdAtRaw = userInfo["created_at"].asStringOrNull
+
+        val allowedFormats = userInfo["allowed_output_formats"]?.let { elem ->
+            elem.arrayOrEmpty.mapNotNull { it.asStringOrNull }
+        } ?: emptyList()
+
         AccountInfo(
             username = userInfo["username"].asStringOrNull,
-            expiryMillis = userInfo["exp_date"].asLongOrNull?.times(1000),
+            expiryMillis = userInfo["exp_date"].asLongOrNull?.let { if (it < 100_000_000_000L) it * 1000L else it },
+            createdAtMillis = createdAtMillis,
+            createdAtRaw = createdAtRaw,
+            status = status,
+            isTrial = userInfo["is_trial"].asIntOrNull == 1 || userInfo["is_trial"].asStringOrNull == "1",
+            allowedOutputFormats = allowedFormats,
             maxConnections = userInfo["max_connections"].asIntOrNull,
             activeConnections = userInfo["active_cons"].asIntOrNull,
-            timezone = body["server_info"]?.jsonObjectOrNull?.get("timezone").asStringOrNull,
+            timezone = serverInfo?.get("timezone").asStringOrNull,
+            serverProtocol = serverProtocol,
         )
     }
 
@@ -421,9 +439,15 @@ class XtreamApi(
     data class AccountInfo(
         val username: String?,
         val expiryMillis: Long?,
+        val createdAtMillis: Long? = null,
+        val createdAtRaw: String? = null,
+        val status: String? = null,
+        val isTrial: Boolean? = null,
+        val allowedOutputFormats: List<String> = emptyList(),
         val maxConnections: Int?,
         val activeConnections: Int?,
         val timezone: String?,
+        val serverProtocol: String? = null,
     )
 
     /**

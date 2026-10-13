@@ -288,6 +288,15 @@ class AppSettings private constructor(context: Context) {
         _accountExpiryMillis.value = millis
     }
 
+    /** The currently selected active source ID in the provider selector. -1L if not explicitly selected. */
+    private val _activeSourceId = MutableStateFlow(prefs.getLong(KEY_ACTIVE_SOURCE_ID, -1L))
+    val activeSourceId: StateFlow<Long> = _activeSourceId.asStateFlow()
+
+    fun setActiveSourceId(id: Long) {
+        prefs.edit().putLong(KEY_ACTIVE_SOURCE_ID, id).apply()
+        _activeSourceId.value = id
+    }
+
     // ---- Hardware Stabilization & Buffer Optimization ---------------------------------------
 
     private val _hardwareProfile = MutableStateFlow(prefs.getString(KEY_HARDWARE_PROFILE, "BALANCED") ?: "BALANCED")
@@ -662,6 +671,7 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_STREAM_MAX_BUFFER = "stream_max_buffer_ms"
         private const val KEY_STREAM_START_BUFFER = "stream_start_buffer_ms"
         private const val KEY_MAX_MULTIVIEW_SLOTS = "max_multiview_slots"
+        private const val KEY_ACTIVE_SOURCE_ID = "active_source_id"
 
         @Volatile private var instance: AppSettings? = null
 

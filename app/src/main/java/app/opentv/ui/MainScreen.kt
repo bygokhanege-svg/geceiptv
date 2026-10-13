@@ -280,6 +280,10 @@ fun MainScreen(
                         onOpenSeries = onOpenSeries,
                         onResume = onResume,
                         onOpenLicense = onOpenLicense,
+                        onOpenSearch = onOpenSearch,
+                        onOpenSettings = onOpenSettings,
+                        onOpenMultiView = onOpenMultiView,
+                        onAddSource = onAddSource,
                         onNavigateTab = { tab = it },
                     )
                     Tab.LIVE -> HomeScreen(
