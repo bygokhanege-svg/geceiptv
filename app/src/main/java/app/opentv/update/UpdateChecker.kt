@@ -135,8 +135,9 @@ class UpdateChecker(
         }
 
         private fun versionParts(v: String): List<Int> =
-            v.trim().trimStart('v', 'V')
+            v.trim().trimStart('v', 'V').trimStart('.')
                 .split('.', '-', '+')
+                .filter { it.isNotBlank() }
                 .map { part -> part.takeWhile(Char::isDigit).toIntOrNull() ?: 0 }
     }
 }

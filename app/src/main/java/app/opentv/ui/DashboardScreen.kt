@@ -915,6 +915,7 @@ private fun PhoneDashboardContent(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .statusBarsPadding()
                 .verticalScroll(scrollState)
                 .padding(horizontal = 14.dp, vertical = 12.dp),
         ) {

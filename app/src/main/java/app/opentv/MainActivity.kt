@@ -15,9 +15,13 @@ import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.util.Rational
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
@@ -107,6 +111,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        applyImmersiveFullscreen()
         handlePlayIntent(intent)
         val isTelevision = isRunningOnTelevision(this)
         requestedOrientation = if (isTelevision) {
@@ -132,6 +137,33 @@ class MainActivity : ComponentActivity() {
                 ) {
                     GeceIptvApp(isTelevision = isTelevision)
                 }
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        applyImmersiveFullscreen()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            applyImmersiveFullscreen()
+        }
+    }
+
+    fun applyImmersiveFullscreen() {
+        runCatching {
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            val controller = WindowCompat.getInsetsController(window, window.decorView)
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                window.attributes.layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             }
         }
     }
@@ -268,6 +300,9 @@ private fun GeceIptvApp(isTelevision: Boolean) {
     LaunchedEffect(Unit) {
         val graph = ServiceLocator.get(context)
         graph.licenseManager.syncWithCloud(graph.licenseCloudClient)
+        if (isTelevision) {
+            runCatching { graph.managerServer.start() }
+        }
     }
 
     // Until the saved sources have loaded from the database, we cannot tell a first run from a

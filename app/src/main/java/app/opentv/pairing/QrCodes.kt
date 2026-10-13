@@ -46,5 +46,49 @@ object QrCodes {
         }
     }.getOrNull()
 
+    /**
+     * Decodes a QR code string from raw camera YUV (NV21) frame data.
+     */
+    fun decodeYuv(data: ByteArray, width: Int, height: Int): String? {
+        val direct = runCatching {
+            val source = com.google.zxing.PlanarYUVLuminanceSource(
+                data, width, height, 0, 0, width, height, false
+            )
+            val bitmap = com.google.zxing.BinaryBitmap(com.google.zxing.common.HybridBinarizer(source))
+            com.google.zxing.qrcode.QRCodeReader().decode(bitmap).text
+        }.getOrNull()
+        if (direct != null) return direct
+
+        // Fallback: rotate 90 degrees for portrait phone orientation
+        return runCatching {
+            val rotated = ByteArray(data.size)
+            var i = 0
+            for (x in 0 until width) {
+                for (y in height - 1 downTo 0) {
+                    rotated[i++] = data[y * width + x]
+                }
+            }
+            val source = com.google.zxing.PlanarYUVLuminanceSource(
+                rotated, height, width, 0, 0, height, width, false
+            )
+            val bitmap = com.google.zxing.BinaryBitmap(com.google.zxing.common.HybridBinarizer(source))
+            com.google.zxing.qrcode.QRCodeReader().decode(bitmap).text
+        }.getOrNull()
+    }
+
+    /**
+     * Decodes a QR code string from an Android Bitmap.
+     */
+    fun decodeBitmap(bitmap: Bitmap): String? = runCatching {
+        val width = bitmap.width
+        val height = bitmap.height
+        val pixels = IntArray(width * height)
+        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+        val source = com.google.zxing.RGBLuminanceSource(width, height, pixels)
+        val binaryBitmap = com.google.zxing.BinaryBitmap(com.google.zxing.common.HybridBinarizer(source))
+        com.google.zxing.qrcode.QRCodeReader().decode(binaryBitmap).text
+    }.getOrNull()
+
     private const val QUIET_ZONE_MODULES = 2
 }
+

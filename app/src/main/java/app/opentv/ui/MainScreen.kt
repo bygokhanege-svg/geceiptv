@@ -28,8 +28,10 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -52,7 +54,7 @@ import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Tv
+import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
@@ -100,6 +102,7 @@ import app.opentv.data.model.Recording
 import app.opentv.data.model.Series
 import app.opentv.ui.channels.HomeScreen
 import app.opentv.ui.recordings.RecordingsScreen
+import app.opentv.ui.remote.RemoteScreen
 import app.opentv.ui.vod.MoviesScreen
 import app.opentv.ui.vod.SeriesScreen
 import app.opentv.ui.DashboardScreen
@@ -121,6 +124,7 @@ enum class Tab(val labelRes: Int, val icon: ImageVector) {
     MOVIES(R.string.nav_movies, Icons.Outlined.Movie),
     SHOWS(R.string.nav_shows, Icons.Outlined.VideoLibrary),
     RECORDINGS(R.string.nav_recordings, Icons.AutoMirrored.Outlined.Dvr),
+    REMOTE(R.string.nav_remote, Icons.Filled.Tv),
 }
 
 private val RAIL_COLLAPSED = 70.dp
@@ -156,13 +160,17 @@ fun MainScreen(
     val liveEnabled by settings.liveEnabled.collectAsState()
     val moviesEnabled by settings.moviesEnabled.collectAsState()
     val seriesEnabled by settings.seriesEnabled.collectAsState()
-    val visibleTabs = remember(liveEnabled, moviesEnabled, seriesEnabled) {
+    val visibleTabs = remember(isTelevision, liveEnabled, moviesEnabled, seriesEnabled) {
         buildList {
             add(Tab.HOME)
             if (liveEnabled) add(Tab.LIVE)
             if (moviesEnabled) add(Tab.MOVIES)
             if (seriesEnabled) add(Tab.SHOWS)
-            add(Tab.RECORDINGS)
+            if (isTelevision) {
+                add(Tab.RECORDINGS)
+            } else {
+                add(Tab.REMOTE)
+            }
         }
     }
     val homeTab = visibleTabs.first()
@@ -312,6 +320,7 @@ fun MainScreen(
                         isSyncing = isSyncing,
                     )
                     Tab.RECORDINGS -> RecordingsScreen(onPlay = onPlayRecording)
+                    Tab.REMOTE -> RemoteScreen()
                 }
             }
 
@@ -421,6 +430,7 @@ private fun PhoneTopBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .statusBarsPadding()
             .height(54.dp)
             .background(Color(0xF90A0F1D))
             .border(width = 0.5.dp, color = Color(0x22FFFFFF), shape = RoundedCornerShape(0.dp))
@@ -530,6 +540,7 @@ private fun PhoneBottomBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .navigationBarsPadding()
             .height(60.dp)
             .background(Color(0xF90A0F1D))
             .border(width = 0.5.dp, color = Color(0x22FFFFFF), shape = RoundedCornerShape(0.dp))
