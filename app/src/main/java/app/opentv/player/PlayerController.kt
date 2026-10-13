@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
+import java.util.Locale
 
 /**
  * Owns the single [ExoPlayer] instance and everything about switching what it is playing.
@@ -507,37 +508,47 @@ class PlayerController(
         selectTrack(group, trackIndex)
     }
 
+    fun hasMultipleQualities(tracks: Tracks = _tracks.value): Boolean {
+        val videoGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_VIDEO }
+        return videoGroups.sumOf { it.length } > 1
+    }
+
     fun getAvailableQualityOptions(
+        tracks: Tracks = _tracks.value,
         autoLabel: String = "Otomatik (En Kararlı)",
+        serverStreamLabel: String = "Sunucu Yayını",
         onSelected: () -> Unit = {},
     ): List<QualityOption> {
         val list = mutableListOf<QualityOption>()
-        val currentH = _qualityHeight.value
         val hasVideoOverride = player.trackSelectionParameters.overrides.any { it.key.type == C.TRACK_TYPE_VIDEO }
 
-        // 1. Auto option (YouTube style - default & most stable)
-        list += QualityOption(
-            label = autoLabel,
-            selected = currentH == null && !hasVideoOverride,
-            onClick = {
-                setQualityAuto()
-                onSelected()
-            },
-        )
+        val videoGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_VIDEO }
+        val totalVideoTracks = videoGroups.sumOf { it.length }
 
-        // 2. Available stream tracks if multi-track (HLS/DASH)
-        val videoGroups = _tracks.value.groups.filter { it.type == C.TRACK_TYPE_VIDEO }
-        val streamHeights = mutableSetOf<Int>()
+        if (totalVideoTracks > 1) {
+            // 1. Auto option (Adaptive HLS/DASH)
+            list += QualityOption(
+                label = autoLabel,
+                selected = !hasVideoOverride,
+                onClick = {
+                    setQualityAuto()
+                    onSelected()
+                },
+            )
 
-        videoGroups.forEach { group ->
-            for (i in 0 until group.length) {
-                val format = group.getTrackFormat(i)
-                val h = format.height
-                if (h > 0) {
-                    streamHeights.add(h)
+            // 2. Real server tracks
+            videoGroups.forEach { group ->
+                for (i in 0 until group.length) {
+                    val format = group.getTrackFormat(i)
+                    val h = format.height
                     val fps = if (format.frameRate > 0) " ${format.frameRate.toInt()}fps" else ""
-                    val br = if (format.bitrate > 0) " • ${format.bitrate / 1_000_000}Mbps" else ""
-                    val label = "${h}p$fps$br"
+                    val br = when {
+                        format.bitrate >= 1_000_000 -> " • ${String.format(Locale.US, "%.1f", format.bitrate / 1_000_000f)}Mbps"
+                        format.bitrate > 0 -> " • ${format.bitrate / 1_000}kbps"
+                        else -> ""
+                    }
+                    val res = if (h > 0) "${h}p" else "Akış ${i + 1}"
+                    val label = "$res$fps$br"
                     list += QualityOption(
                         label = label,
                         selected = group.isTrackSelected(i),
@@ -548,27 +559,37 @@ class PlayerController(
                     )
                 }
             }
-        }
-
-        // 3. Preset resolutions (1080p, 720p, 480p, 360p) if not already listed by stream tracks
-        val standardPresets = listOf(
-            1080 to "1080p (Full HD)",
-            720 to "720p (HD)",
-            480 to "480p (SD)",
-            360 to "360p (Düşük Hız)",
-        )
-
-        for ((height, label) in standardPresets) {
-            if (!streamHeights.contains(height)) {
-                list += QualityOption(
-                    label = label,
-                    selected = currentH == height && !hasVideoOverride,
-                    onClick = {
-                        setQualityMaxHeight(height)
-                        onSelected()
-                    },
-                )
+        } else if (totalVideoTracks == 1) {
+            // Single stream track directly from the server — no fake downscaling options
+            val group = videoGroups.first()
+            val format = group.getTrackFormat(0)
+            val h = format.height
+            val fps = if (format.frameRate > 0) " ${format.frameRate.toInt()}fps" else ""
+            val br = when {
+                format.bitrate >= 1_000_000 -> " • ${String.format(Locale.US, "%.1f", format.bitrate / 1_000_000f)}Mbps"
+                format.bitrate > 0 -> " • ${format.bitrate / 1_000}kbps"
+                else -> ""
             }
+            val res = if (h > 0) "${h}p$fps$br" else autoLabel
+            val label = if (h > 0) "$res ($serverStreamLabel)" else "$autoLabel ($serverStreamLabel)"
+            list += QualityOption(
+                label = label,
+                selected = true,
+                onClick = {
+                    setQualityAuto()
+                    onSelected()
+                },
+            )
+        } else {
+            // Video track info not yet received or raw stream
+            list += QualityOption(
+                label = "$autoLabel ($serverStreamLabel)",
+                selected = true,
+                onClick = {
+                    setQualityAuto()
+                    onSelected()
+                },
+            )
         }
 
         return list

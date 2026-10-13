@@ -416,7 +416,11 @@ fun PlayerScreen(
                     // Immersive: left opens the channel list, right the quality picker.
                     event.key == Key.DirectionLeft -> { if (queue.isNotEmpty()) channelListVisible = true; true }
                     event.key == Key.DirectionRight -> {
-                        if (variants.size > 1) { reveal(); panel = Panel.QUALITY }; true
+                        if (variants.size > 1 || controller.hasMultipleQualities(tracks)) {
+                            reveal()
+                            panel = Panel.QUALITY
+                        }
+                        true
                     }
                     else -> { reveal(); true }
                 }
@@ -743,6 +747,7 @@ private fun OptionPanel(
 ) {
     val offLabel = stringResource(R.string.player_subtitles_off)
     val standardLabel = stringResource(R.string.player_quality_standard)
+    val serverLabel = stringResource(R.string.player_quality_server)
     val fitLabel = stringResource(R.string.player_aspect_fit)
     val fillLabel = stringResource(R.string.player_aspect_fill)
     val stretchLabel = stringResource(R.string.player_aspect_stretch)
@@ -751,10 +756,12 @@ private fun OptionPanel(
         Panel.AUDIO -> buildAudioOptions(controller, tracks, onDone)
         Panel.QUALITY -> buildQualityOptions(
             controller = controller,
+            tracks = tracks,
             variants = variants,
             currentId = currentId,
             standardLabel = standardLabel,
             autoLabel = stringResource(R.string.player_quality_auto),
+            serverLabel = serverLabel,
             onTune = onTune,
             onDone = onDone,
         )
@@ -851,15 +858,17 @@ private fun subtitleTrackLabel(label: String?, language: String?, index: Int): S
 @OptIn(UnstableApi::class)
 private fun buildQualityOptions(
     controller: PlayerController,
+    tracks: Tracks,
     variants: List<Channel>,
     currentId: Long?,
     standardLabel: String,
     autoLabel: String,
+    serverLabel: String,
     onTune: (Channel) -> Unit,
     onDone: () -> Unit,
 ): List<Option> {
     val list = mutableListOf<Option>()
-    // 1. Channel variants if provided by playlist
+    // 1. Channel variants if provided by playlist (multiple connections from server)
     if (variants.size > 1) {
         variants.forEach { v ->
             list += Option(v.qualityLabel.ifEmpty { standardLabel }, v.id == currentId) {
@@ -868,9 +877,17 @@ private fun buildQualityOptions(
             }
         }
     }
-    // 2. YouTube-style dynamic resolution options (Auto, 1080p, 720p, 480p, etc.)
-    controller.getAvailableQualityOptions(autoLabel = autoLabel, onSelected = onDone).forEach { opt ->
-        list += Option(opt.label, opt.selected, opt.onClick)
+    // 2. Real stream tracks from the server
+    val hasMultipleStreamTracks = controller.hasMultipleQualities(tracks)
+    if (hasMultipleStreamTracks || variants.size <= 1) {
+        controller.getAvailableQualityOptions(
+            tracks = tracks,
+            autoLabel = autoLabel,
+            serverStreamLabel = serverLabel,
+            onSelected = onDone,
+        ).forEach { opt ->
+            list += Option(opt.label, opt.selected, opt.onClick)
+        }
     }
     return list
 }

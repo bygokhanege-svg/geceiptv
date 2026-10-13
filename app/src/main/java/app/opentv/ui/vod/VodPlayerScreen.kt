@@ -929,7 +929,13 @@ private fun TrackPanel(
         }
         VodPanel.QUALITY -> {
             val autoLabel = stringResource(R.string.player_quality_auto)
-            controller.getAvailableQualityOptions(autoLabel = autoLabel, onSelected = onDone).forEach { opt ->
+            val serverLabel = stringResource(R.string.player_quality_server)
+            controller.getAvailableQualityOptions(
+                tracks = tracks,
+                autoLabel = autoLabel,
+                serverStreamLabel = serverLabel,
+                onSelected = onDone,
+            ).forEach { opt ->
                 options += Triple(opt.label, opt.selected, opt.onClick)
             }
         }

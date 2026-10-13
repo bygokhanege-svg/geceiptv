@@ -111,6 +111,7 @@
     <string name="player_audio">Ses</string>
     <string name="player_quality">Kalite</string>
     <string name="player_quality_auto">Otomatik (En Kararlı)</string>
+    <string name="player_quality_server">Sunucu Yayını</string>
     <string name="player_aspect">En-boy oranı</string>
     <string name="player_record">Kaydet</string>
     <string name="player_pop_out">Mini oynatıcı</string>

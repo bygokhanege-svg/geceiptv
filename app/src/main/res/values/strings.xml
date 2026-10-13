@@ -124,6 +124,7 @@
     <string name="player_audio">Audio</string>
     <string name="player_quality">Quality</string>
     <string name="player_quality_auto">Auto (Stable)</string>
+    <string name="player_quality_server">Server Stream</string>
     <string name="player_aspect">Aspect</string>
     <string name="player_record">Record</string>
     <string name="player_pop_out">Pop out</string>
