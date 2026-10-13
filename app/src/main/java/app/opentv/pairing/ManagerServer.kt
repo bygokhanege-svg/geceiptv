@@ -503,6 +503,9 @@ class ManagerServer(
             "select", "enter", "ok" -> RemoteControlSignals.send(RemoteControlSignals.RemoteCommand.Select)
             "back" -> RemoteControlSignals.send(RemoteControlSignals.RemoteCommand.Back)
             "home" -> RemoteControlSignals.send(RemoteControlSignals.RemoteCommand.Home)
+            "nav_live", "live" -> RemoteControlSignals.send(RemoteControlSignals.RemoteCommand.NavLive)
+            "nav_movies", "movies", "film" -> RemoteControlSignals.send(RemoteControlSignals.RemoteCommand.NavMovies)
+            "nav_shows", "shows", "series", "dizi" -> RemoteControlSignals.send(RemoteControlSignals.RemoteCommand.NavShows)
             "play_pause", "play" -> RemoteControlSignals.send(RemoteControlSignals.RemoteCommand.PlayPause)
             "vol_up" -> RemoteControlSignals.send(RemoteControlSignals.RemoteCommand.VolumeUp)
             "vol_down" -> RemoteControlSignals.send(RemoteControlSignals.RemoteCommand.VolumeDown)
@@ -522,11 +525,18 @@ class ManagerServer(
 
     private fun handlePlayCommand(output: OutputStream, body: String) {
         val req = runCatching { json.decodeFromString(PlayReq.serializer(), body) }.getOrNull()
-        if (req != null && req.channelId != 0L) {
-            RemoteControlSignals.send(RemoteControlSignals.RemoteCommand.PlayChannel(req.channelId))
-            output.write(PairingHttp.httpResponse("200 OK", "application/json", """{"ok":true}"""))
+        if (req != null) {
+            if (req.channelId != 0L) {
+                RemoteControlSignals.send(RemoteControlSignals.RemoteCommand.PlayChannel(req.channelId))
+                output.write(PairingHttp.httpResponse("200 OK", "application/json", """{"ok":true}"""))
+            } else if (!req.url.isNullOrBlank()) {
+                RemoteControlSignals.send(RemoteControlSignals.RemoteCommand.CastMedia(req.url, req.title ?: "Yayın", req.isLive))
+                output.write(PairingHttp.httpResponse("200 OK", "application/json", """{"ok":true}"""))
+            } else {
+                output.write(PairingHttp.httpResponse("400 Bad Request", "application/json", """{"ok":false,"error":"Invalid payload"}"""))
+            }
         } else {
-            output.write(PairingHttp.httpResponse("400 Bad Request", "application/json", """{"ok":false,"error":"Invalid channelId"}"""))
+            output.write(PairingHttp.httpResponse("400 Bad Request", "application/json", """{"ok":false,"error":"Invalid payload"}"""))
         }
     }
 
@@ -607,5 +617,10 @@ class ManagerServer(
 
 @Serializable private data class RemoteReq(val cmd: String, val value: String? = null)
 
-@Serializable private data class PlayReq(val channelId: Long)
+@Serializable private data class PlayReq(
+    val channelId: Long = 0L,
+    val url: String? = null,
+    val title: String? = null,
+    val isLive: Boolean = true,
+)
 

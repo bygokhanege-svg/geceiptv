@@ -35,8 +35,19 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.QrCode2
+import androidx.compose.material.icons.outlined.DarkMode
+import androidx.compose.material.icons.outlined.LightMode
+import androidx.compose.material.icons.outlined.LiveTv
+import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.VideoLibrary
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import app.opentv.R
@@ -65,6 +76,7 @@ fun DashboardScreen(
     onOpenProfiles: () -> Unit = {},
     isTelevision: Boolean = true,
     onNavigateTab: ((Tab) -> Unit)? = null,
+    onOpenWebManager: () -> Unit = {},
     vodViewModel: VodViewModel = viewModel(),
     sourcesViewModel: SourcesViewModel = viewModel(),
 ) {
@@ -73,6 +85,14 @@ fun DashboardScreen(
     val activeSourceId by settings.activeSourceId.collectAsState()
     val sourcesUi by sourcesViewModel.ui.collectAsState()
     var providerMenuExpanded by remember { mutableStateOf(false) }
+
+    val themeMode by settings.themeMode.collectAsState()
+    val systemInDark = isSystemInDarkTheme()
+    val isDark = when (themeMode) {
+        AppSettings.ThemeMode.DARK -> true
+        AppSettings.ThemeMode.LIGHT -> false
+        AppSettings.ThemeMode.SYSTEM -> isTelevision || systemInDark
+    }
 
     val recentMovies by vodViewModel.recentlyAddedMovies.collectAsState()
     val recentSeries by vodViewModel.recentlyAddedSeries.collectAsState()
@@ -298,6 +318,57 @@ fun DashboardScreen(
                             )
                         }
                     }
+
+                    // Theme Toggle Button (Gece / Gündüz) - Next to Clock Card
+                    val themeInteractionSource = remember { MutableInteractionSource() }
+                    val isThemeFocused by themeInteractionSource.collectIsFocusedAsState()
+
+                    Box(
+                        modifier = Modifier
+                            .height(46.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(
+                                if (isThemeFocused) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+                                else MaterialTheme.colorScheme.surface,
+                            )
+                            .border(
+                                1.dp,
+                                if (isThemeFocused) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                                RoundedCornerShape(8.dp),
+                            )
+                            .clickable(
+                                interactionSource = themeInteractionSource,
+                                indication = null,
+                                onClick = {
+                                    settings.setThemeMode(
+                                        if (isDark) AppSettings.ThemeMode.LIGHT else AppSettings.ThemeMode.DARK
+                                    )
+                                },
+                            )
+                            .focusable(interactionSource = themeInteractionSource)
+                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        ) {
+                            Icon(
+                                imageVector = if (isDark) Icons.Outlined.DarkMode else Icons.Outlined.LightMode,
+                                contentDescription = "Tema Değiştir",
+                                tint = if (isDark) Color(0xFFFACC15) else Color(0xFFF59E0B),
+                                modifier = Modifier.size(17.dp),
+                            )
+                            Text(
+                                text = if (isDark) "Gece" else "Gündüz",
+                                color = MaterialTheme.colorScheme.onSurface,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp,
+                            )
+                        }
+                    }
                 }
             }
 
@@ -311,6 +382,19 @@ fun DashboardScreen(
                 onAddSource = onAddSource,
                 expanded = providerMenuExpanded,
                 onToggleExpand = { providerMenuExpanded = !providerMenuExpanded },
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Şık Hızlı Gezinme Butonları (Canlı TV, Film, Video / Dizi, QR ile Bağlan)
+            DashboardNavCardsRow(
+                formattedChannels = formattedChannels,
+                formattedMovies = formattedMovies,
+                formattedSeries = formattedSeries,
+                onNavigateLive = { onNavigateTab?.invoke(Tab.LIVE) },
+                onNavigateMovies = { onNavigateTab?.invoke(Tab.MOVIES) },
+                onNavigateSeries = { onNavigateTab?.invoke(Tab.SHOWS) },
+                onOpenQr = onOpenWebManager,
             )
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -1995,6 +2079,159 @@ private fun PhoneActionBarCard(
                         modifier = Modifier.size(20.dp),
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun DashboardNavCardsRow(
+    formattedChannels: String,
+    formattedMovies: String,
+    formattedSeries: String,
+    onNavigateLive: () -> Unit,
+    onNavigateMovies: () -> Unit,
+    onNavigateSeries: () -> Unit,
+    onOpenQr: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // 1. CANLI TV
+        DashboardNavCard(
+            modifier = Modifier.weight(1f),
+            title = "CANLI TV",
+            subtitle = if (formattedChannels.isNotBlank() && formattedChannels != "0") "$formattedChannels Kanal" else "Yayınlar",
+            icon = Icons.Outlined.LiveTv,
+            gradientColors = listOf(Color(0xFF0369A1), Color(0xFF0284C7), Color(0xFF0C4A6E)),
+            accentColor = Color(0xFF38BDF8),
+            onClick = onNavigateLive,
+        )
+
+        // 2. FİLM
+        DashboardNavCard(
+            modifier = Modifier.weight(1f),
+            title = "FİLM",
+            subtitle = if (formattedMovies.isNotBlank() && formattedMovies != "0") "$formattedMovies Film" else "Sinema",
+            icon = Icons.Outlined.Movie,
+            gradientColors = listOf(Color(0xFF4338CA), Color(0xFF6366F1), Color(0xFF312E81)),
+            accentColor = Color(0xFF818CF8),
+            onClick = onNavigateMovies,
+        )
+
+        // 3. VİDEO / DİZİ
+        DashboardNavCard(
+            modifier = Modifier.weight(1f),
+            title = "VİDEO / DİZİ",
+            subtitle = if (formattedSeries.isNotBlank() && formattedSeries != "0") "$formattedSeries Dizi" else "Sezonlar",
+            icon = Icons.Outlined.VideoLibrary,
+            gradientColors = listOf(Color(0xFF7C3AED), Color(0xFF8B5CF6), Color(0xFF4C1D95)),
+            accentColor = Color(0xFFA78BFA),
+            onClick = onNavigateSeries,
+        )
+
+        // 4. QR İLE BAĞLAN
+        DashboardNavCard(
+            modifier = Modifier.weight(1f),
+            title = "QR İLE BAĞLAN",
+            subtitle = "Kumanda & Web",
+            icon = Icons.Filled.QrCode2,
+            gradientColors = listOf(Color(0xFF059669), Color(0xFF10B981), Color(0xFF064E3B)),
+            accentColor = Color(0xFF34D399),
+            onClick = onOpenQr,
+        )
+    }
+}
+
+@Composable
+private fun DashboardNavCard(
+    modifier: Modifier = Modifier,
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    gradientColors: List<Color>,
+    accentColor: Color,
+    onClick: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+
+    val scale by animateFloatAsState(
+        targetValue = if (isFocused) 1.04f else 1.0f,
+        animationSpec = tween(durationMillis = 150),
+        label = "navCardScale",
+    )
+
+    Box(
+        modifier = modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .height(56.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(
+                Brush.horizontalGradient(
+                    if (isFocused) gradientColors.map { it.copy(alpha = 0.95f) }
+                    else gradientColors.map { it.copy(alpha = 0.45f) }
+                )
+            )
+            .border(
+                width = if (isFocused) 2.5.dp else 1.dp,
+                color = if (isFocused) Color.White else accentColor.copy(alpha = 0.35f),
+                shape = RoundedCornerShape(12.dp),
+            )
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            )
+            .focusable(interactionSource = interactionSource)
+            .padding(horizontal = 14.dp, vertical = 7.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.Black.copy(alpha = 0.35f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = title,
+                    tint = if (isFocused) Color.White else accentColor,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+
+            Column(
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text(
+                    text = title,
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = subtitle,
+                    color = if (isFocused) Color.White.copy(alpha = 0.9f) else Color.White.copy(alpha = 0.65f),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }

@@ -357,10 +357,30 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
     /** null = All. Exposed so the sidebar can highlight the active entry. */
     val selectedCategory = MutableStateFlow<String?>(null)
     val favouritesOnly = MutableStateFlow(false)
-    /** Provider filter for the live guide. null = every source. Only surfaced when there's >1 source. */
-    val selectedSource = MutableStateFlow<Long?>(null)
+    /** Provider filter for the live guide. Follows activeSourceId from settings. */
+    val selectedSource = MutableStateFlow<Long?>(
+        if (settings.activeSourceId.value > 0) settings.activeSourceId.value else null
+    )
     private val query = MutableStateFlow("")
     private val nowTick = MutableStateFlow(System.currentTimeMillis())
+
+    init {
+        viewModelScope.launch {
+            graph.sourceRepository.observeAll().collect { sources ->
+                if (sources.isNotEmpty()) {
+                    val currentId = settings.activeSourceId.value
+                    if (currentId <= 0 || sources.none { it.id == currentId }) {
+                        settings.setActiveSourceId(sources.first().id)
+                    }
+                }
+            }
+        }
+        viewModelScope.launch {
+            settings.activeSourceId.collect { id ->
+                selectedSource.value = if (id > 0) id else null
+            }
+        }
+    }
 
     /**
      * One rail entry = one *logical* category.
@@ -370,7 +390,14 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
      * filter across every underlying id at once. This is the on-device version of what
      * Viewella did on a server it had to pay for.
      */
-    data class CategoryGroup(val key: String, val label: String, val ids: List<String>)
+    data class CategoryGroup(val key: String, val label: String, val ids: List<String>, val country: String? = null)
+
+    val selectedCountry = MutableStateFlow<String?>(null)
+
+    fun selectCountry(country: String?) {
+        selectedCountry.value = country
+        selectedCategory.value = null
+    }
 
     val categoryGroups: StateFlow<List<CategoryGroup>> =
         combine(
@@ -383,6 +410,18 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
             foldCategories(scoped)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val availableCountries: StateFlow<List<String>> = categoryGroups.map { groups ->
+        val found = mutableSetOf<String>()
+        for (g in groups) {
+            val c = g.country
+            if (!c.isNullOrBlank() && c.length in 2..5) {
+                found.add(c)
+            }
+        }
+        val priority = listOf("TR", "DE", "UK", "US", "FR", "NL", "IT", "ES", "AZ", "AR", "RU")
+        found.sortedWith(compareBy({ if (it in priority) priority.indexOf(it) else 999 }, { it }))
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     /**
      * Folds codec-split provider categories into one logical [CategoryGroup] each — 'UK| GENERAL
      * HD/RAW' and 'UK| GENERAL hevc' become a single "General" entry that filters across every
@@ -390,14 +429,15 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
      * [managerCategoryGroups] so both group the rail identically.
      */
     private fun foldCategories(raw: List<Category>): List<CategoryGroup> {
-        val groups = LinkedHashMap<String, Pair<String, MutableList<String>>>()
+        val groups = LinkedHashMap<String, Triple<String, MutableList<String>, String?>>()
         for (category in raw) {
             val n = ChannelNameNormalizer.normalize(category.name)
             val key = n.groupKey.ifEmpty { category.id }
-            val entry = groups.getOrPut(key) { n.baseName to mutableListOf() }
+            val country = n.region?.uppercase()?.trim()
+            val entry = groups.getOrPut(key) { Triple(n.baseName, mutableListOf(), country) }
             entry.second += category.id
         }
-        return groups.map { (key, value) -> CategoryGroup(key, value.first, value.second) }
+        return groups.map { (key, value) -> CategoryGroup(key, value.first, value.second, value.third) }
     }
 
     /**
@@ -412,8 +452,9 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
 
     /** The rail's view of categories: hidden ones drop out until the session is unlocked. */
     val visibleCategoryGroups: StateFlow<List<CategoryGroup>> =
-        combine(categoryGroups, settings.hiddenCategories, settings.hiddenUnlocked) { groups, hidden, unlocked ->
-            if (unlocked) groups else groups.filter { it.key !in hidden }
+        combine(categoryGroups, settings.hiddenCategories, settings.hiddenUnlocked, selectedCountry) { groups, hidden, unlocked, country ->
+            val unlockedGroups = if (unlocked) groups else groups.filter { it.key !in hidden }
+            if (country == null) unlockedGroups else unlockedGroups.filter { it.country.equals(country, ignoreCase = true) }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**
@@ -514,7 +555,8 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
             RowsKey(ids, favs, q, hidden)
         }
             .combine(selectedSource) { key, source -> key to source }
-            .flatMapLatest { (key, source) ->
+            .combine(selectedCountry) { (key, source), country -> Triple(key, source, country) }
+            .flatMapLatest { (key, source, country) ->
                 val channelFlow = when {
                     key.query.isNotBlank() -> graph.catalogRepository.searchChannels(key.query)
                     key.favs -> graph.catalogRepository.observeFavouriteChannels()
@@ -539,13 +581,20 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
                     val visible =
                         if (key.hiddenIds.isEmpty()) scoped
                         else scoped.filter { it.categoryId !in key.hiddenIds }
+
+                    val countryScoped = if (country == null || key.categoryIds != null) visible
+                    else visible.filter { ch ->
+                        val reg = ChannelNameNormalizer.normalize(ch.name).region
+                        reg.equals(country, ignoreCase = true)
+                    }
+
                     // Show the size-aware loading bar for the FIRST guide build only (start-up).
                     // After that the guide is built and flicking between categories is cheap, so
                     // don't flash a loading line on every tap — that bar was only ever meant for
                     // the one-time heavy load, and leaking it per-category read as a stuck "100%".
                     val firstBuild = !guideBuilt
-                    if (firstBuild) StatusBus.set(sizeMessage(visible.size), 0f)
-                    buildRows(visible, byEpgChannel, now, reportProgress = firstBuild)
+                    if (firstBuild) StatusBus.set(sizeMessage(countryScoped.size), 0f)
+                    buildRows(countryScoped, byEpgChannel, now, reportProgress = firstBuild)
                 }
             }
             // Grouping thousands of channels against a 12-hour, all-feeds programme window is heavy
@@ -649,6 +698,9 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
     /** Switch the live guide's provider filter; the category resets since categories differ per source. */
     fun selectSource(sourceId: Long?) {
         selectedSource.value = sourceId
+        if (sourceId != null) {
+            settings.setActiveSourceId(sourceId)
+        }
         selectedCategory.value = null
         favouritesOnly.value = false
     }
@@ -905,8 +957,10 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
     private val movieCategory = MutableStateFlow<String?>(null)
     private val seriesCategory = MutableStateFlow<String?>(null)
 
-    /** Provider filter for Movies/Shows. null = every source. Surfaced only when there's >1 source. */
-    val selectedVodSource = MutableStateFlow<Long?>(null)
+    /** Provider filter for Movies/Shows. Follows activeSourceId from settings. */
+    val selectedVodSource = MutableStateFlow<Long?>(
+        if (settings.activeSourceId.value > 0) settings.activeSourceId.value else null
+    )
 
     /** Providers, so Movies/Shows can offer a source filter (shown only when there's more than one). */
     val sources: StateFlow<List<Source>> =
@@ -931,30 +985,33 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val movies: StateFlow<List<Movie>> = movieCategory
-        .flatMapLatest { graph.catalogRepository.observeMovies(it) }
+    val movies: StateFlow<List<Movie>> = combine(movieCategory, selectedVodSource) { cat, src -> cat to src }
+        .flatMapLatest { (cat, src) -> graph.catalogRepository.observeMovies(cat, src) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val series: StateFlow<List<Series>> = seriesCategory
-        .flatMapLatest { graph.catalogRepository.observeSeries(it) }
+    val series: StateFlow<List<Series>> = combine(seriesCategory, selectedVodSource) { cat, src -> cat to src }
+        .flatMapLatest { (cat, src) -> graph.catalogRepository.observeSeries(cat, src) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun selectMovieCategory(id: String?) { movieCategory.value = id }
 
     fun selectSeriesCategory(id: String?) { seriesCategory.value = id }
 
-    val totalMoviesCount: StateFlow<Int> =
-        graph.catalogRepository.observeMovieCount()
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val totalMoviesCount: StateFlow<Int> = selectedVodSource
+        .flatMapLatest { src -> graph.catalogRepository.observeMovieCount(src) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
-    val totalSeriesCount: StateFlow<Int> =
-        graph.catalogRepository.observeSeriesCount()
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val totalSeriesCount: StateFlow<Int> = selectedVodSource
+        .flatMapLatest { src -> graph.catalogRepository.observeSeriesCount(src) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
-    val totalChannelsCount: StateFlow<Int> =
-        graph.catalogRepository.observeChannelCount()
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val totalChannelsCount: StateFlow<Int> = selectedVodSource
+        .flatMapLatest { src -> graph.catalogRepository.observeChannelCount(src) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     val accountExpiryMillis: StateFlow<Long> = settings.accountExpiryMillis
 
@@ -999,6 +1056,9 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
     /** Switch the Movies/Shows provider filter; category selections reset since they differ per source. */
     fun selectVodSource(sourceId: Long?) {
         selectedVodSource.value = sourceId
+        if (sourceId != null) {
+            settings.setActiveSourceId(sourceId)
+        }
         movieCategory.value = null
         seriesCategory.value = null
     }
@@ -1009,13 +1069,15 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
     // one shared scan of the library — guarded so opening the tab twice, or recomposing, does not
     // re-scan a 20k-title catalogue; it recomputes only on a profile change or catalogue growth.
 
-    val recentlyAddedMovies: StateFlow<List<Movie>> =
-        graph.catalogRepository.recentlyAddedMovies()
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val recentlyAddedMovies: StateFlow<List<Movie>> = selectedVodSource
+        .flatMapLatest { src -> graph.catalogRepository.recentlyAddedMovies(limit = 30, sourceId = src) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val recentlyAddedSeries: StateFlow<List<Series>> =
-        graph.catalogRepository.recentlyAddedSeries()
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val recentlyAddedSeries: StateFlow<List<Series>> = selectedVodSource
+        .flatMapLatest { src -> graph.catalogRepository.recentlyAddedSeries(limit = 30, sourceId = src) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _recommendedMovies = MutableStateFlow<List<Movie>>(emptyList())
     val recommendedMovies: StateFlow<List<Movie>> = _recommendedMovies.asStateFlow()
@@ -1027,7 +1089,7 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
     val seriesGenreRows: StateFlow<List<GenreGroup<Series>>> = _seriesGenreRows.asStateFlow()
 
     /** The (profile, catalogue) the computed rows were last built for — the redundant-reload guard. */
-    private data class HomeFeedsKey(val profileId: Long, val movieCount: Int, val seriesCount: Int)
+    private data class HomeFeedsKey(val profileId: Long, val sourceId: Long?, val movieCount: Int, val seriesCount: Int)
 
     @Volatile private var loadedHomeFeeds: HomeFeedsKey? = null
 
@@ -1047,6 +1109,14 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             settings.activeProfileId.collect { loadHomeFeeds() }
         }
+        viewModelScope.launch {
+            settings.activeSourceId.collect { id ->
+                selectedVodSource.value = if (id > 0) id else null
+                movieCategory.value = null
+                seriesCategory.value = null
+                loadHomeFeeds()
+            }
+        }
     }
 
     /**
@@ -1064,20 +1134,21 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             homeFeedsMutex.withLock {
                 val profileId = settings.activeProfileId.value
-                val movieCount = runCatching { graph.catalogRepository.movieCount() }.getOrDefault(0)
-                val seriesCount = runCatching { graph.catalogRepository.seriesCount() }.getOrDefault(0)
+                val sourceId = selectedVodSource.value
+                val movieCount = runCatching { graph.catalogRepository.movieCount(sourceId) }.getOrDefault(0)
+                val seriesCount = runCatching { graph.catalogRepository.seriesCount(sourceId) }.getOrDefault(0)
 
                 // Already built for this profile and this exact catalogue? Then a tab re-open or a
                 // recomposition must not trigger another full-library scan. Only a profile change or
                 // a catalogue whose size moved gets past here.
                 val prev = loadedHomeFeeds
-                if (prev != null && prev.profileId == profileId &&
+                if (prev != null && prev.profileId == profileId && prev.sourceId == sourceId &&
                     prev.movieCount == movieCount && prev.seriesCount == seriesCount
                 ) return@withLock
 
                 // One scan of each library (repo switches to IO), reused across every computed row.
-                val allMovies = runCatching { graph.catalogRepository.allMovies() }.getOrDefault(emptyList())
-                val allSeries = runCatching { graph.catalogRepository.allSeries() }.getOrDefault(emptyList())
+                val allMovies = runCatching { graph.catalogRepository.allMovies(sourceId) }.getOrDefault(emptyList())
+                val allSeries = runCatching { graph.catalogRepository.allSeries(sourceId) }.getOrDefault(emptyList())
 
                 _recommendedMovies.value = runCatching {
                     graph.catalogRepository.recommendedMoviesFrom(allMovies, profileId)
@@ -1089,7 +1160,7 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
                     graph.catalogRepository.seriesByGenreFrom(allSeries)
                 }.getOrDefault(emptyList())
 
-                loadedHomeFeeds = HomeFeedsKey(profileId, movieCount, seriesCount)
+                loadedHomeFeeds = HomeFeedsKey(profileId, sourceId, movieCount, seriesCount)
             }
         }
     }
@@ -1142,14 +1213,13 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         _vodLoading.value = true
-        val synced = StatusBus.during("Loading movies & shows…") {
-            runCatching {
-                for (source in graph.sourceRepository.enabled()) {
-                    graph.catalogRepository.syncVod(source, now)
-                }
-            }.isSuccess
-        }
+        val synced = runCatching {
+            for (source in graph.sourceRepository.enabled()) {
+                graph.catalogRepository.syncVod(source, now)
+            }
+        }.isSuccess
         _vodLoading.value = false
+        StatusBus.set(null)
         // Stamp the cache only when the fetch actually succeeded, so a failed sync retries on the
         // next open instead of being remembered as "fresh" and leaving the user with no catalogue.
         if (synced) settings.vodSyncedAtMillis = now

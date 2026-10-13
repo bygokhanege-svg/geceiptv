@@ -127,7 +127,7 @@ fun MoviesScreen(
                     sortOption = SortOption.entries[(sortOption.ordinal + 1) % SortOption.entries.size]
                 }
             }
-            if (sources.size > 1) {
+            if (sources.size > 1 && selectedSource == null) {
                 ProviderMenu(
                     sources = sources,
                     selected = selectedSource,
@@ -228,7 +228,7 @@ fun SeriesScreen(
                     sortOption = SortOption.entries[(sortOption.ordinal + 1) % SortOption.entries.size]
                 }
             }
-            if (sources.size > 1) {
+            if (sources.size > 1 && selectedSource == null) {
                 ProviderMenu(
                     sources = sources,
                     selected = selectedSource,

@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
@@ -28,9 +29,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -42,6 +45,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
+import app.opentv.core.TvCastHelper
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
@@ -102,6 +107,9 @@ fun MovieDetailScreen(
         }
     }
 
+    val context = LocalContext.current
+    val isTvPaired = remember { TvCastHelper.isTvPaired(context) }
+
     val m = movie ?: run { LoadingDetail(); return }
 
     // Land focus on the primary action once the page is up, so a d-pad has somewhere to be.
@@ -119,6 +127,14 @@ fun MovieDetailScreen(
                     primary = true,
                     modifier = Modifier.focusRequester(playFocus),
                 ) { onPlay(m) }
+                if (isTvPaired) {
+                    DetailButton(
+                        icon = Icons.Filled.Tv,
+                        label = "TV'ye Gönder",
+                    ) {
+                        TvCastHelper.castMediaUrl(context, scope, m.streamUrl, m.displayTitle, false)
+                    }
+                }
                 DetailButton(
                     icon = if (m.favourite) Icons.Filled.Star else Icons.Outlined.StarOutline,
                     label = stringResource(if (m.favourite) R.string.common_remove_favourite else R.string.common_favourite),
@@ -278,6 +294,10 @@ fun SeriesDetailScreen(
     }
 
     val s = series
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val isTvPaired = remember { TvCastHelper.isTvPaired(context) }
+
     val episodes by (s?.let { viewModel.episodes(it) } ?: viewModel.noEpisodes)
         .collectAsState(initial = emptyList())
 
@@ -335,7 +355,13 @@ fun SeriesDetailScreen(
                     SectionHeader(stringResource(R.string.vod_season, season))
                 }
                 items(eps, key = { it.id }) { ep ->
-                    EpisodeRow(ep, onPlayEpisode)
+                    EpisodeRow(
+                        ep = ep,
+                        onPlay = onPlayEpisode,
+                        onCast = if (isTvPaired) {
+                            { TvCastHelper.castMediaUrl(context, scope, ep.streamUrl, "S${ep.season}E${ep.episodeNumber} · ${ep.title}", false) }
+                        } else null,
+                    )
                 }
             }
         }
@@ -649,7 +675,11 @@ private fun DetailButton(
 
 /** One episode row: season/episode marker, title, and a focus highlight; plays on click. */
 @Composable
-private fun EpisodeRow(ep: Episode, onPlay: (mediaKey: String, url: String, title: String) -> Unit) {
+private fun EpisodeRow(
+    ep: Episode,
+    onPlay: (mediaKey: String, url: String, title: String) -> Unit,
+    onCast: (() -> Unit)? = null,
+) {
     var focused by remember { mutableStateOf(false) }
     Row(
         Modifier
@@ -682,7 +712,21 @@ private fun EpisodeRow(ep: Episode, onPlay: (mediaKey: String, url: String, titl
             style = MaterialTheme.typography.bodyLarge,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
         )
+        if (onCast != null) {
+            IconButton(
+                onClick = onCast,
+                modifier = Modifier.size(36.dp),
+            ) {
+                Icon(
+                    Icons.Filled.Tv,
+                    contentDescription = "TV'ye Gönder",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        }
     }
 }
 

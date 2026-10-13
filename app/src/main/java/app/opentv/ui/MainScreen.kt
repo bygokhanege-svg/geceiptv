@@ -180,83 +180,49 @@ fun MainScreen(
         if (tab !in visibleTabs) tab = homeTab
     }
 
-    var railExpanded by remember { mutableStateOf(false) }
-    var railHasFocus by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        app.opentv.core.RemoteControlSignals.commands.collect { cmd ->
+            when (cmd) {
+                is app.opentv.core.RemoteControlSignals.RemoteCommand.NavLive -> tab = Tab.LIVE
+                is app.opentv.core.RemoteControlSignals.RemoteCommand.NavMovies -> tab = Tab.MOVIES
+                is app.opentv.core.RemoteControlSignals.RemoteCommand.NavShows -> tab = Tab.SHOWS
+                is app.opentv.core.RemoteControlSignals.RemoteCommand.Home -> tab = homeTab
+                else -> Unit
+            }
+        }
+    }
 
     val tabFocusRequesters = remember {
         Tab.entries.associateWith { FocusRequester() }
     }
 
-    // Back Handlers:
-    if (isTelevision) {
-        // TV Remote Back Handler:
-        // 1. If focus is currently inside the content, Back immediately focuses the active tab in NavRail, gliding the menu open.
-        BackHandler(enabled = !railHasFocus) {
-            tabFocusRequesters[tab]?.requestFocus()
-        }
+    var showExit by remember { mutableStateOf(false) }
 
-        // 2. If focus is already in NavRail and we are on a non-home tab, Back switches to HOME.
-        BackHandler(enabled = railHasFocus && tab != homeTab) {
-            tab = homeTab
-            tabFocusRequesters[homeTab]?.requestFocus()
-        }
-
-        // 3. If focus is in NavRail and we are on HOME, Back prompts exit dialog.
-        var showExit by remember { mutableStateOf(false) }
-        BackHandler(enabled = railHasFocus && tab == homeTab) {
-            showExit = true
-        }
-
-        if (showExit) {
-            AlertDialog(
-                onDismissRequest = { showExit = false },
-                title = { Text(stringResource(R.string.exit_title)) },
-                text = { Text(stringResource(R.string.exit_body)) },
-                confirmButton = {
-                    TextButton(onClick = { showExit = false; context.findActivity()?.finish() }) {
-                        Text(stringResource(R.string.exit_confirm))
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showExit = false }) { Text(stringResource(R.string.exit_cancel)) }
-                },
-            )
-        }
-    } else {
-        // Phone Touch Back Handlers:
-        // Non-home tab back switches to Home
-        BackHandler(enabled = tab != homeTab) {
-            tab = homeTab
-        }
-
-        // On Home tab, prompt exit
-        var showExit by remember { mutableStateOf(false) }
-        BackHandler(enabled = tab == homeTab) {
-            showExit = true
-        }
-
-        if (showExit) {
-            AlertDialog(
-                onDismissRequest = { showExit = false },
-                title = { Text(stringResource(R.string.exit_title)) },
-                text = { Text(stringResource(R.string.exit_body)) },
-                confirmButton = {
-                    TextButton(onClick = { showExit = false; context.findActivity()?.finish() }) {
-                        Text(stringResource(R.string.exit_confirm))
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showExit = false }) { Text(stringResource(R.string.exit_cancel)) }
-                },
-            )
-        }
+    // When on any non-home tab, Back key switches back to HOME
+    BackHandler(enabled = tab != homeTab) {
+        tab = homeTab
     }
 
-    val scrimAlpha by animateFloatAsState(
-        targetValue = if (railExpanded) 0.55f else 0f,
-        animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing),
-        label = "scrimAlpha",
-    )
+    // When on HOME tab, Back key prompts exit dialog
+    BackHandler(enabled = tab == homeTab) {
+        showExit = true
+    }
+
+    if (showExit) {
+        AlertDialog(
+            onDismissRequest = { showExit = false },
+            title = { Text(stringResource(R.string.exit_title)) },
+            text = { Text(stringResource(R.string.exit_body)) },
+            confirmButton = {
+                TextButton(onClick = { showExit = false; context.findActivity()?.finish() }) {
+                    Text(stringResource(R.string.exit_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showExit = false }) { Text(stringResource(R.string.exit_cancel)) }
+            },
+        )
+    }
 
     Column(Modifier.fillMaxSize()) {
         if (!isTelevision && tab != Tab.HOME) {
@@ -273,11 +239,10 @@ fun MainScreen(
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
             // CONTENT AREA:
-            // Full width (0.dp) on phones for stylish native feel; 70dp fixed left margin on TV for NavRail.
+            // Fixed full width (0.dp) on both TV and phones for a stable, clean layout.
             Box(
                 Modifier
                     .fillMaxSize()
-                    .padding(start = if (isTelevision) RAIL_COLLAPSED else 0.dp)
                     .focusRequester(contentFocusRequester)
                     .focusGroup()
             ) {
@@ -295,6 +260,7 @@ fun MainScreen(
                         activeProfileName = activeProfileName,
                         onOpenProfiles = onOpenProfiles,
                         onNavigateTab = { tab = it },
+                        onOpenWebManager = onOpenWebManager,
                     )
                     Tab.LIVE -> HomeScreen(
                         isTelevision = isTelevision,
@@ -322,83 +288,6 @@ fun MainScreen(
                     Tab.RECORDINGS -> RecordingsScreen(onPlay = onPlayRecording)
                     Tab.REMOTE -> RemoteScreen()
                 }
-            }
-
-            if (isTelevision) {
-                // Translucent cinema scrim overlay (visible only while drawer is expanded)
-                if (scrimAlpha > 0.005f) {
-                    Box(
-                        Modifier
-                            .fillMaxSize()
-                            .padding(start = RAIL_COLLAPSED)
-                            .graphicsLayer { alpha = scrimAlpha }
-                            .background(Color.Black)
-                    )
-                }
-
-                // Floating Navigation Drawer (TV only)
-                NavRail(
-                    tabs = visibleTabs,
-                    current = tab,
-                    expanded = railExpanded,
-                    onExpandedChanged = { railExpanded = it },
-                    onFocusChanged = { railHasFocus = it },
-                    onSelect = { selectedTab ->
-                        val tabChanged = tab != selectedTab
-                        tab = selectedTab
-                        railExpanded = false
-                        railHasFocus = false
-                        // Seamless sub-menu transition on click without needing arrow keys
-                        coroutineScope.launch {
-                            if (tabChanged) {
-                                delay(70)
-                            } else {
-                                delay(15)
-                            }
-                            val moved = focusManager.moveFocus(FocusDirection.Right)
-                            if (!moved) {
-                                val nextMoved = focusManager.moveFocus(FocusDirection.Next)
-                                if (!nextMoved) {
-                                    runCatching { contentFocusRequester.requestFocus() }
-                                }
-                            }
-                        }
-                    },
-                    onOpenSearch = {
-                        railExpanded = false
-                        railHasFocus = false
-                        onOpenSearch()
-                    },
-                    onOpenSettings = {
-                        railExpanded = false
-                        railHasFocus = false
-                        onOpenSettings()
-                    },
-                    onOpenLicense = {
-                        railExpanded = false
-                        railHasFocus = false
-                        onOpenLicense()
-                    },
-                    onOpenProfiles = {
-                        railExpanded = false
-                        railHasFocus = false
-                        onOpenProfiles()
-                    },
-                    onOpenMultiView = {
-                        railExpanded = false
-                        railHasFocus = false
-                        onOpenMultiView()
-                    },
-                    onOpenWebManager = {
-                        railExpanded = false
-                        railHasFocus = false
-                        onOpenWebManager()
-                    },
-                    activeProfileName = activeProfileName,
-                    isTelevision = isTelevision,
-                    tabFocusRequesters = tabFocusRequesters,
-                    modifier = Modifier.align(Alignment.CenterStart),
-                )
             }
         }
 

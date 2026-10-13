@@ -404,6 +404,12 @@ private fun GeceIptvApp(isTelevision: Boolean) {
                         launchSingleTop = true
                     }
                 }
+                is app.opentv.core.RemoteControlSignals.RemoteCommand.CastMedia -> {
+                    navController.navigate(Routes.vodPlayer("cast", cmd.url, cmd.title, "OpenTV")) {
+                        popUpTo(Routes.HOME) { inclusive = false }
+                        launchSingleTop = true
+                    }
+                }
                 is app.opentv.core.RemoteControlSignals.RemoteCommand.Home -> {
                     navController.navigate(Routes.HOME) {
                         popUpTo(Routes.HOME) { inclusive = false }

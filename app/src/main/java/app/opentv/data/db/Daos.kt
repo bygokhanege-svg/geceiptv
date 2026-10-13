@@ -180,8 +180,8 @@ interface ChannelDao {
      * screen tell "the guide is still building from channels on disk" apart from "nothing loaded",
      * so a failed or empty sync surfaces an error instead of spinning forever.
      */
-    @Query("SELECT COUNT(*) FROM channels WHERE hidden = 0")
-    fun observeVisibleCount(): Flow<Int>
+    @Query("SELECT COUNT(*) FROM channels WHERE hidden = 0 AND (:sourceId IS NULL OR sourceId = :sourceId)")
+    fun observeVisibleCount(sourceId: Long? = null): Flow<Int>
 
     @Query("UPDATE channels SET favourite = :favourite WHERE id = :id")
     suspend fun setFavourite(id: Long, favourite: Boolean)
@@ -435,37 +435,38 @@ interface MovieDao {
     @Query(
         """
         SELECT * FROM movies
-        WHERE (:categoryId IS NULL OR categoryId = :categoryId)
+        WHERE (:sourceId IS NULL OR sourceId = :sourceId)
+          AND (:categoryId IS NULL OR categoryId = :categoryId)
         ORDER BY addedMillis DESC, name
         """
     )
-    fun observe(categoryId: String?): Flow<List<Movie>>
+    fun observe(categoryId: String?, sourceId: Long? = null): Flow<List<Movie>>
 
-    @Query("SELECT * FROM movies WHERE favourite = 1 ORDER BY name")
-    fun observeFavourites(): Flow<List<Movie>>
+    @Query("SELECT * FROM movies WHERE favourite = 1 AND (:sourceId IS NULL OR sourceId = :sourceId) ORDER BY name")
+    fun observeFavourites(sourceId: Long? = null): Flow<List<Movie>>
 
-    @Query("SELECT * FROM movies WHERE name LIKE '%' || :query || '%' ORDER BY name LIMIT :limit")
-    fun search(query: String, limit: Int = 200): Flow<List<Movie>>
+    @Query("SELECT * FROM movies WHERE (:sourceId IS NULL OR sourceId = :sourceId) AND name LIKE '%' || :query || '%' ORDER BY name LIMIT :limit")
+    fun search(query: String, limit: Int = 200, sourceId: Long? = null): Flow<List<Movie>>
 
     /** Newest-first, for the "Recently Added" home row. Reactive so it fills in as VOD sync lands. */
-    @Query("SELECT * FROM movies ORDER BY addedMillis DESC LIMIT :limit")
-    fun observeRecentlyAdded(limit: Int): Flow<List<Movie>>
+    @Query("SELECT * FROM movies WHERE (:sourceId IS NULL OR sourceId = :sourceId) ORDER BY addedMillis DESC LIMIT :limit")
+    fun observeRecentlyAdded(limit: Int, sourceId: Long? = null): Flow<List<Movie>>
 
     /**
      * Every movie, newest first — the working set for the Kotlin-side feeds (by-genre grouping,
      * genre-affinity recommendations, more-like-this). One pass over a few thousand rows is cheap;
      * per-genre `LIKE` queries would multiply round-trips and risk substring false positives.
      */
-    @Query("SELECT * FROM movies ORDER BY addedMillis DESC")
-    suspend fun all(): List<Movie>
+    @Query("SELECT * FROM movies WHERE (:sourceId IS NULL OR sourceId = :sourceId) ORDER BY addedMillis DESC")
+    suspend fun all(sourceId: Long? = null): List<Movie>
 
     /** How many movies are on disk. A cheap COUNT the home feeds use to tell "the library grew"
      *  from "same as last time" without loading every row (see VodViewModel.loadHomeFeeds). */
-    @Query("SELECT COUNT(*) FROM movies")
-    suspend fun count(): Int
+    @Query("SELECT COUNT(*) FROM movies WHERE (:sourceId IS NULL OR sourceId = :sourceId)")
+    suspend fun count(sourceId: Long? = null): Int
 
-    @Query("SELECT COUNT(*) FROM movies")
-    fun observeCount(): Flow<Int>
+    @Query("SELECT COUNT(*) FROM movies WHERE (:sourceId IS NULL OR sourceId = :sourceId)")
+    fun observeCount(sourceId: Long? = null): Flow<Int>
 
     /**
      * Fallback for More-Like-This when a movie has no genre to match on: other titles from the same
@@ -538,29 +539,30 @@ interface SeriesDao {
     @Query(
         """
         SELECT * FROM series
-        WHERE (:categoryId IS NULL OR categoryId = :categoryId)
+        WHERE (:sourceId IS NULL OR sourceId = :sourceId)
+          AND (:categoryId IS NULL OR categoryId = :categoryId)
         ORDER BY addedMillis DESC, name
         """
     )
-    fun observe(categoryId: String?): Flow<List<Series>>
+    fun observe(categoryId: String?, sourceId: Long? = null): Flow<List<Series>>
 
-    @Query("SELECT * FROM series WHERE name LIKE '%' || :query || '%' ORDER BY name LIMIT :limit")
-    fun search(query: String, limit: Int = 200): Flow<List<Series>>
+    @Query("SELECT * FROM series WHERE (:sourceId IS NULL OR sourceId = :sourceId) AND name LIKE '%' || :query || '%' ORDER BY name LIMIT :limit")
+    fun search(query: String, limit: Int = 200, sourceId: Long? = null): Flow<List<Series>>
 
     /** Newest-first, for the "Recently Added" home row. Reactive so it fills in as VOD sync lands. */
-    @Query("SELECT * FROM series ORDER BY addedMillis DESC LIMIT :limit")
-    fun observeRecentlyAdded(limit: Int): Flow<List<Series>>
+    @Query("SELECT * FROM series WHERE (:sourceId IS NULL OR sourceId = :sourceId) ORDER BY addedMillis DESC LIMIT :limit")
+    fun observeRecentlyAdded(limit: Int, sourceId: Long? = null): Flow<List<Series>>
 
     /** Every series, newest first — working set for the Kotlin-side by-genre / more-like-this feeds. */
-    @Query("SELECT * FROM series ORDER BY addedMillis DESC")
-    suspend fun all(): List<Series>
+    @Query("SELECT * FROM series WHERE (:sourceId IS NULL OR sourceId = :sourceId) ORDER BY addedMillis DESC")
+    suspend fun all(sourceId: Long? = null): List<Series>
 
     /** How many series are on disk — the cheap "did the library grow" check for the home feeds. */
-    @Query("SELECT COUNT(*) FROM series")
-    suspend fun count(): Int
+    @Query("SELECT COUNT(*) FROM series WHERE (:sourceId IS NULL OR sourceId = :sourceId)")
+    suspend fun count(sourceId: Long? = null): Int
 
-    @Query("SELECT COUNT(*) FROM series")
-    fun observeCount(): Flow<Int>
+    @Query("SELECT COUNT(*) FROM series WHERE (:sourceId IS NULL OR sourceId = :sourceId)")
+    fun observeCount(sourceId: Long? = null): Flow<Int>
 
     /** Fallback for More-Like-This when a series has no genre: same source/category, best-rated first. */
     @Query(

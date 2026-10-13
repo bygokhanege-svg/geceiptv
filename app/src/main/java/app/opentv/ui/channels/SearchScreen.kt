@@ -25,7 +25,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backspace
+import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -35,8 +37,11 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
+import app.opentv.core.TvCastHelper
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
@@ -78,6 +83,10 @@ fun SearchScreen(
     vodViewModel: VodViewModel = viewModel(),
 ) {
     var query by remember(initialQuery) { mutableStateOf(initialQuery) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val isTvPaired = remember { TvCastHelper.isTvPaired(context) }
+
     val channelResults by viewModel.searchResults.collectAsState()
     val movieResults by vodViewModel.movieResults.collectAsState()
     val seriesResults by vodViewModel.seriesResults.collectAsState()
@@ -128,23 +137,38 @@ fun SearchScreen(
                         if (channelResults.isNotEmpty()) {
                             item { SectionHeader(stringResource(R.string.common_channels)) }
                             items(channelResults, key = { "c${it.key}" }) { row ->
-                                SearchResultRow(row = row, onClick = { onPlayChannel(row.primary) })
+                                SearchResultRow(
+                                    row = row,
+                                    onClick = { onPlayChannel(row.primary) },
+                                    onCast = if (isTvPaired) {
+                                        { TvCastHelper.castChannel(context, scope, row.primary.id, row.primary.shownName) }
+                                    } else null,
+                                )
                             }
                         }
                         if (movieResults.isNotEmpty()) {
                             item { SectionHeader(stringResource(R.string.nav_movies)) }
                             items(movieResults, key = { "m${it.id}" }) { movie ->
-                                VodResultRow(movie.displayTitle, movie.posterUrl, movie.year?.toString()) {
-                                    onPlayMovie(movie)
-                                }
+                                VodResultRow(
+                                    name = movie.displayTitle,
+                                    posterUrl = movie.posterUrl,
+                                    subtitle = movie.year?.toString(),
+                                    onClick = { onPlayMovie(movie) },
+                                    onCast = if (isTvPaired) {
+                                        { TvCastHelper.castMediaUrl(context, scope, movie.streamUrl, movie.displayTitle, false) }
+                                    } else null,
+                                )
                             }
                         }
                         if (seriesResults.isNotEmpty()) {
                             item { SectionHeader(stringResource(R.string.nav_shows)) }
                             items(seriesResults, key = { "s${it.id}" }) { show ->
-                                VodResultRow(show.displayTitle, show.posterUrl, show.year?.toString()) {
-                                    onOpenSeries(show)
-                                }
+                                VodResultRow(
+                                    name = show.displayTitle,
+                                    posterUrl = show.posterUrl,
+                                    subtitle = show.year?.toString(),
+                                    onClick = { onOpenSeries(show) },
+                                )
                             }
                         }
                     }
@@ -172,7 +196,13 @@ private fun SectionHeader(title: String) {
 }
 
 @Composable
-private fun VodResultRow(name: String, posterUrl: String?, subtitle: String?, onClick: () -> Unit) {
+private fun VodResultRow(
+    name: String,
+    posterUrl: String?,
+    subtitle: String?,
+    onClick: () -> Unit,
+    onCast: (() -> Unit)? = null,
+) {
     var focused by remember { mutableStateOf(false) }
     Row(
         Modifier
@@ -200,11 +230,28 @@ private fun VodResultRow(name: String, posterUrl: String?, subtitle: String?, on
                 Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+        if (onCast != null) {
+            IconButton(
+                onClick = onCast,
+                modifier = Modifier.size(40.dp),
+            ) {
+                Icon(
+                    Icons.Filled.Tv,
+                    contentDescription = "TV'ye Gönder",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        }
     }
 }
 
 @Composable
-private fun SearchResultRow(row: ChannelsViewModel.Row, onClick: () -> Unit) {
+private fun SearchResultRow(
+    row: ChannelsViewModel.Row,
+    onClick: () -> Unit,
+    onCast: (() -> Unit)? = null,
+) {
     var focused by remember { mutableStateOf(false) }
     Row(
         Modifier
@@ -240,6 +287,19 @@ private fun SearchResultRow(row: ChannelsViewModel.Row, onClick: () -> Unit) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+        if (onCast != null) {
+            IconButton(
+                onClick = onCast,
+                modifier = Modifier.size(40.dp),
+            ) {
+                Icon(
+                    Icons.Filled.Tv,
+                    contentDescription = "TV'ye Gönder",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
         }
     }
 }

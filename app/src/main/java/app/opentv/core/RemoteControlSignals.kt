@@ -28,6 +28,10 @@ object RemoteControlSignals {
         object Mute : RemoteCommand
         object ChannelUp : RemoteCommand
         object ChannelDown : RemoteCommand
+        object NavLive : RemoteCommand
+        object NavMovies : RemoteCommand
+        object NavShows : RemoteCommand
+        data class CastMedia(val url: String, val title: String, val isLive: Boolean = true) : RemoteCommand
         data class Number(val digit: Int) : RemoteCommand
         data class SearchText(val query: String) : RemoteCommand
         data class PlayChannel(val channelId: Long) : RemoteCommand

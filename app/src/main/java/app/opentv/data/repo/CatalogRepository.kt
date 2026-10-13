@@ -31,8 +31,12 @@ import app.opentv.data.remote.TmdbClient
 import app.opentv.data.remote.XtreamApi
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
+import app.opentv.core.StatusBus
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
@@ -162,13 +166,15 @@ class CatalogRepository(
 
     /** Reactive number of visible channels on disk — the UI uses this to tell "guide still
      * building" (channels exist) apart from "nothing loaded" (a failed or empty sync). */
-    fun observeChannelCount(): Flow<Int> = channelDao.observeVisibleCount()
+    fun observeChannelCount(sourceId: Long? = null): Flow<Int> = channelDao.observeVisibleCount(sourceId)
 
     fun observeCategories(kind: StreamKind): Flow<List<Category>> = categoryDao.observe(kind)
 
-    fun observeMovies(categoryId: String? = null): Flow<List<Movie>> = movieDao.observe(categoryId)
+    fun observeMovies(categoryId: String? = null, sourceId: Long? = null): Flow<List<Movie>> =
+        movieDao.observe(categoryId, sourceId)
 
-    fun observeSeries(categoryId: String? = null): Flow<List<Series>> = seriesDao.observe(categoryId)
+    fun observeSeries(categoryId: String? = null, sourceId: Long? = null): Flow<List<Series>> =
+        seriesDao.observe(categoryId, sourceId)
 
     fun observeEpisodes(sourceId: Long, seriesId: String): Flow<List<Episode>> =
         episodeDao.observeForSeries(sourceId, seriesId)
@@ -178,9 +184,11 @@ class CatalogRepository(
     fun searchChannelsIncludingHidden(query: String): Flow<List<Channel>> =
         channelDao.searchIncludingHidden(query)
 
-    fun searchMovies(query: String): Flow<List<Movie>> = movieDao.search(query)
+    fun searchMovies(query: String, sourceId: Long? = null): Flow<List<Movie>> =
+        movieDao.search(query, sourceId = sourceId)
 
-    fun searchSeries(query: String): Flow<List<Series>> = seriesDao.search(query)
+    fun searchSeries(query: String, sourceId: Long? = null): Flow<List<Series>> =
+        seriesDao.search(query, sourceId = sourceId)
 
     suspend fun channel(id: Long): Channel? = channelDao.byId(id)
 
@@ -223,24 +231,28 @@ class CatalogRepository(
     // these into home rows and detail screens.
 
     /** "Recently Added" movies, newest first. Reactive. */
-    fun recentlyAddedMovies(limit: Int = 30): Flow<List<Movie>> = movieDao.observeRecentlyAdded(limit)
+    fun recentlyAddedMovies(limit: Int = 30, sourceId: Long? = null): Flow<List<Movie>> =
+        movieDao.observeRecentlyAdded(limit, sourceId)
 
     /** "Recently Added" series, newest first. Reactive. */
-    fun recentlyAddedSeries(limit: Int = 30): Flow<List<Series>> = seriesDao.observeRecentlyAdded(limit)
+    fun recentlyAddedSeries(limit: Int = 30, sourceId: Long? = null): Flow<List<Series>> =
+        seriesDao.observeRecentlyAdded(limit, sourceId)
 
     /** Every movie, newest first — for a caller that wants to build its own groupings. */
-    suspend fun allMovies(): List<Movie> = withContext(Dispatchers.IO) { movieDao.all() }
+    suspend fun allMovies(sourceId: Long? = null): List<Movie> =
+        withContext(Dispatchers.IO) { movieDao.all(sourceId) }
 
     /** Every series, newest first. */
-    suspend fun allSeries(): List<Series> = withContext(Dispatchers.IO) { seriesDao.all() }
+    suspend fun allSeries(sourceId: Long? = null): List<Series> =
+        withContext(Dispatchers.IO) { seriesDao.all(sourceId) }
 
     /** How many movies / series are on disk — a cheap COUNT the home screen uses to tell "the
      *  library grew" from "unchanged since last open" without loading every row. */
-    suspend fun movieCount(): Int = withContext(Dispatchers.IO) { movieDao.count() }
-    suspend fun seriesCount(): Int = withContext(Dispatchers.IO) { seriesDao.count() }
+    suspend fun movieCount(sourceId: Long? = null): Int = withContext(Dispatchers.IO) { movieDao.count(sourceId) }
+    suspend fun seriesCount(sourceId: Long? = null): Int = withContext(Dispatchers.IO) { seriesDao.count(sourceId) }
 
-    fun observeMovieCount(): Flow<Int> = movieDao.observeCount()
-    fun observeSeriesCount(): Flow<Int> = seriesDao.observeCount()
+    fun observeMovieCount(sourceId: Long? = null): Flow<Int> = movieDao.observeCount(sourceId)
+    fun observeSeriesCount(sourceId: Long? = null): Flow<Int> = seriesDao.observeCount(sourceId)
 
     /**
      * Movies grouped by genre for the by-genre home rows: the [maxGenres] biggest genres, each with
@@ -750,31 +762,60 @@ class CatalogRepository(
     }
 
     private suspend fun syncXtreamVod(source: Source, nowUtcMillis: Long) {
-        // VOD is optional: plenty of accounts have live TV only, and a 404 on get_vod_streams
-        // must not cost the user their channel list. Movies and series are gated independently so
-        // a user who only turned off, say, Series still gets their movie library refreshed.
         val moviesOn = settings.moviesEnabled.value
         val seriesOn = settings.seriesEnabled.value
         if (!moviesOn && !seriesOn) return
 
-        val movieCategories =
-            if (moviesOn) runCatching { api.movieCategories(source) }.getOrDefault(emptyList())
-            else emptyList()
-        val movies =
-            if (moviesOn) runCatching { api.movies(source) }.getOrDefault(emptyList())
-            else emptyList()
-        val seriesCategories =
-            if (seriesOn) runCatching { api.seriesCategories(source) }.getOrDefault(emptyList())
-            else emptyList()
-        val series =
-            if (seriesOn) runCatching { api.series(source) }.getOrDefault(emptyList())
-            else emptyList()
+        coroutineScope {
+            val movieCatsDeferred = async(Dispatchers.IO) {
+                if (moviesOn) runCatching { api.movieCategories(source) }.getOrDefault(emptyList()) else emptyList()
+            }
+            val moviesDeferred = async(Dispatchers.IO) {
+                if (moviesOn) runCatching { api.movies(source) }.getOrDefault(emptyList()) else emptyList()
+            }
+            val seriesCatsDeferred = async(Dispatchers.IO) {
+                if (seriesOn) runCatching { api.seriesCategories(source) }.getOrDefault(emptyList()) else emptyList()
+            }
+            val seriesDeferred = async(Dispatchers.IO) {
+                if (seriesOn) runCatching { api.series(source) }.getOrDefault(emptyList()) else emptyList()
+            }
 
-        if (movieCategories.isNotEmpty() || seriesCategories.isNotEmpty()) {
-            categoryDao.upsertAll(movieCategories + seriesCategories)
+            val movieCategories = movieCatsDeferred.await()
+            val seriesCategories = seriesCatsDeferred.await()
+            if (movieCategories.isNotEmpty() || seriesCategories.isNotEmpty()) {
+                categoryDao.upsertAll(movieCategories + seriesCategories)
+            }
+
+            val movies = moviesDeferred.await()
+            if (movies.isNotEmpty()) {
+                val total = movies.size
+                val chunks = movies.chunked(500)
+                var inserted = 0
+                for (chunk in chunks) {
+                    movieDao.upsertAll(chunk)
+                    inserted += chunk.size
+                    val pct = (inserted.toFloat() / total * 100).toInt().coerceIn(0, 100)
+                    StatusBus.set("Filmler yükleniyor: $inserted / $total (%$pct)", inserted.toFloat() / total)
+                    yield()
+                }
+            }
+
+            val series = seriesDeferred.await()
+            if (series.isNotEmpty()) {
+                val total = series.size
+                val chunks = series.chunked(500)
+                var inserted = 0
+                for (chunk in chunks) {
+                    seriesDao.upsertAll(chunk)
+                    inserted += chunk.size
+                    val pct = (inserted.toFloat() / total * 100).toInt().coerceIn(0, 100)
+                    StatusBus.set("Diziler yükleniyor: $inserted / $total (%$pct)", inserted.toFloat() / total)
+                    yield()
+                }
+            }
+
+            StatusBus.set(null)
         }
-        if (movies.isNotEmpty()) movieDao.upsertAll(movies)
-        if (series.isNotEmpty()) seriesDao.upsertAll(series)
     }
 
     private suspend fun syncM3u(source: Source, nowUtcMillis: Long): SyncResult {

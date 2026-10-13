@@ -49,6 +49,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -58,6 +59,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.VolumeDown
+import app.opentv.core.TvCastHelper
 import androidx.compose.material.icons.automirrored.filled.VolumeMute
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.ArrowDownward
@@ -222,6 +224,8 @@ fun RemoteScreen() {
             showManualDialog = false
             vibrateDevice()
             Toast.makeText(context, "✓ Televizyona Bağlandı!", Toast.LENGTH_SHORT).show()
+            // Görev 3: Telefondaki sağlayıcıları otomatik olarak TV ile eşleşince TV'ye aktar
+            TvCastHelper.syncSourcesToTv(context, coroutineScope, hostBase, token)
         } else {
             Toast.makeText(context, "Geçersiz QR kodu veya IP formatı.", Toast.LENGTH_SHORT).show()
         }
@@ -519,6 +523,50 @@ fun RemoteScreen() {
                             Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Gönder", tint = Color(0xFF3B82F6), modifier = Modifier.size(18.dp))
                         }
                     }
+                }
+
+                Spacer(Modifier.height(14.dp))
+
+                // Görev 6: Kumanda bölümüne TV kısa yol tuşları (Canlı TV, Film, Dizi, Anasayfa, Sağlayıcıları Eşitle)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TvShortcutChip(
+                        icon = Icons.Default.Tv,
+                        label = "Canlı TV",
+                        color = Color(0xFFEF4444),
+                        onClick = { sendCommand("nav_live") }
+                    )
+                    TvShortcutChip(
+                        icon = Icons.Default.PlayArrow,
+                        label = "Film",
+                        color = Color(0xFF8B5CF6),
+                        onClick = { sendCommand("nav_movies") }
+                    )
+                    TvShortcutChip(
+                        icon = Icons.Default.Tv,
+                        label = "Dizi",
+                        color = Color(0xFF3B82F6),
+                        onClick = { sendCommand("nav_shows") }
+                    )
+                    TvShortcutChip(
+                        icon = Icons.Default.Home,
+                        label = "Anasayfa",
+                        color = Color(0xFF10B981),
+                        onClick = { sendCommand("home") }
+                    )
+                    TvShortcutChip(
+                        icon = Icons.Default.Refresh,
+                        label = "Sağlayıcıları Eşitle",
+                        color = Color(0xFFF59E0B),
+                        onClick = {
+                            TvCastHelper.syncSourcesToTv(context, coroutineScope, tvUrl, tvToken)
+                        }
+                    )
                 }
 
                 Spacer(Modifier.height(16.dp))
@@ -1092,3 +1140,30 @@ private fun CameraSurfacePreview(
         modifier = Modifier.fillMaxSize(),
     )
 }
+
+@Composable
+private fun TvShortcutChip(
+    icon: ImageVector,
+    label: String,
+    color: Color,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick),
+        color = color.copy(alpha = 0.15f),
+        border = BorderStroke(1.dp, color.copy(alpha = 0.4f)),
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(16.dp))
+            Text(label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+        }
+    }
+}
+

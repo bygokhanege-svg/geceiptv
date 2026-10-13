@@ -55,6 +55,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Subtitles
+import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -66,6 +67,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import app.opentv.core.TvCastHelper
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -213,6 +216,7 @@ fun PlayerScreen(
     // Picture-in-picture. While the player is on it is "eligible" to shrink to a floating window
     // (pressing Home does it, handled in MainActivity); [inPip] drives hiding all the chrome.
     val inPip by app.opentv.core.PipState.inPip.collectAsState()
+    val isTvPaired = remember { TvCastHelper.isTvPaired(context) }
     val pipSupported = remember {
         android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O &&
             context.packageManager.hasSystemFeature(
@@ -615,6 +619,17 @@ fun PlayerScreen(
                         controller.stop()
                         onOpenMultiView(currentId)
                         interaction++
+                    }
+                    val castId = currentId
+                    if (isTvPaired && castId != null) {
+                        BarChip(
+                            icon = Icons.Filled.Tv,
+                            label = "TV'ye Gönder",
+                            selected = false,
+                        ) {
+                            TvCastHelper.castChannel(context, scope, castId, channelTitle)
+                            interaction++
+                        }
                     }
                 }
             }

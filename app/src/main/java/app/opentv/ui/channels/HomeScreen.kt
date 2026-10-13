@@ -137,10 +137,10 @@ fun HomeScreen(
     val selectedSource by viewModel.selectedSource.collectAsState()
     val windowStart by viewModel.windowStartMillis.collectAsState()
     // How many days ahead the guide is scrolled (0 = live now). Drives the ‹ Today › nav.
-    val guideDayOffset by viewModel.guideDayOffset.collectAsState()
-    // Tri-state: null = still checking the catalogue, true = channels on disk, false = confirmed
-    // empty. Drives the choice between the loading spinner and a recoverable error below.
     val channelsPresent by viewModel.channelsPresent.collectAsState()
+    val availableCountries by viewModel.availableCountries.collectAsState()
+    val selectedCountry by viewModel.selectedCountry.collectAsState()
+    var channelToHide by remember { mutableStateOf<ChannelsViewModel.Row?>(null) }
 
     // Two separate ideas, on purpose:
     //  - highlightedRow: where the d-pad is in the grid. Moves freely with up/down.
@@ -191,6 +191,8 @@ fun HomeScreen(
             pendingRailFocus = false
         }
     }
+
+    var guideDayOffset by remember { mutableStateOf(0) }
 
     // Re-evaluate "now" once a minute so progress bars advance without leaving the screen.
     LaunchedEffect(Unit) {
@@ -340,16 +342,39 @@ fun HomeScreen(
                     style = MaterialTheme.typography.headlineMedium,
                     modifier = Modifier.padding(horizontal = 20.dp),
                 )
-                Spacer(Modifier.height(12.dp))
-                // The top "Search channels" bar was removed — Search now lives in the global nav rail.
+                Spacer(Modifier.height(8.dp))
+
+                // Country grouping filter row per Görev 4
+                if (availableCountries.isNotEmpty()) {
+                    androidx.compose.foundation.lazy.LazyRow(
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        item(key = "country-all") {
+                            PhoneCategoryChip(
+                                label = "Tümü",
+                                isSelected = selectedCountry == null,
+                                onClick = { viewModel.selectCountry(null) },
+                            )
+                        }
+                        items(availableCountries, key = { "country-$it" }) { code ->
+                            PhoneCategoryChip(
+                                label = countryFlag(code),
+                                isSelected = selectedCountry.equals(code, ignoreCase = true),
+                                onClick = { viewModel.selectCountry(code) },
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                }
 
                 LazyColumn(
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-                    // Provider switch — only when there's more than one source. Lets the user keep
-                    // several playlists and flip between them (cardiodoc's request); "All" folds them.
-                    if (sources.size > 1) {
+                    // Provider switch — only when no active source is chosen. Per Görev 2, when an active provider
+                    // is selected, other providers' menus and channels remain invisible.
+                    if (sources.size > 1 && selectedSource == null) {
                         item(key = "provider-header") {
                             Text(
                                 stringResource(R.string.channels_manager_source_header),
@@ -475,6 +500,7 @@ fun HomeScreen(
                             rows = rows,
                             selectedKey = highlightedRow?.key,
                             onSelectRow = { row -> channelMenu = row },
+                            onLongSelectRow = { row -> channelToHide = row },
                             onFocusRow = onFocusChannel,
                             onToggleFavourite = { viewModel.toggleFavourite(it) },
                             onExitLeftFromChannel = onExitLeftChannel,
@@ -497,8 +523,8 @@ fun HomeScreen(
                             onRecord = { recordSelected() },
                             dayLabel = dayLabel,
                             canGoPrevDay = guideDayOffset > 0,
-                            onPrevDay = { viewModel.nudgeGuideDay(-1) },
-                            onNextDay = { viewModel.nudgeGuideDay(1) },
+                            onPrevDay = { if (guideDayOffset > 0) guideDayOffset-- },
+                            onNextDay = { guideDayOffset++ },
                             onProgrammeClick = { prog -> highlightedRow?.let { r -> recordTarget = r to prog } },
                             modifier = Modifier
                                 .weight(0.56f)
@@ -837,7 +863,51 @@ fun HomeScreen(
                             }
                         }
                     }
+                    RecordActionRow("👁️ Kanalı Listede Gizle") {
+                        val rowToHide = menuRow
+                        channelMenu = null
+                        recordScope.launch {
+                            rowToHide.variants.forEach { v -> graph.catalogRepository.setChannelHidden(v.id, true) }
+                        }
+                        Toast.makeText(context, "${channel.shownName} listede gizlendi", Toast.LENGTH_SHORT).show()
+                    }
                     RecordActionRow(stringResource(R.string.common_cancel)) { channelMenu = null }
+                }
+            }
+        }
+    }
+
+    // Long press OK confirm dialog to hide channel
+    channelToHide?.let { rowToHide ->
+        Dialog(onDismissRequest = { channelToHide = null }) {
+            Column(
+                Modifier
+                    .width(420.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(20.dp),
+            ) {
+                Text(
+                    "Kanalı Listede Gizle",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "\"${rowToHide.primary.shownName}\" kanalını listeden gizlemek istiyor musunuz?",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(18.dp))
+                RecordActionRow("👁️ Bu Kanalı Gizle", primary = true) {
+                    recordScope.launch {
+                        rowToHide.variants.forEach { v -> graph.catalogRepository.setChannelHidden(v.id, true) }
+                    }
+                    Toast.makeText(context, "${rowToHide.primary.shownName} listeden gizlendi", Toast.LENGTH_SHORT).show()
+                    channelToHide = null
+                }
+                RecordActionRow("İptal") {
+                    channelToHide = null
                 }
             }
         }
@@ -1196,27 +1266,7 @@ private fun PhoneHomeScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Multi-source switcher chip
-            if (sources.size > 1) {
-                item(key = "phone-provider-chip") {
-                    val currentSrcName = sources.firstOrNull { it.id == selectedSource }?.name
-                        ?: stringResource(R.string.channels_manager_all_sources)
-                    PhoneCategoryChip(
-                        label = "📁 $currentSrcName",
-                        isSelected = false,
-                        onClick = {
-                            val nextSource = when (selectedSource) {
-                                null -> sources.firstOrNull()?.id
-                                else -> {
-                                    val idx = sources.indexOfFirst { it.id == selectedSource }
-                                    if (idx >= 0 && idx < sources.size - 1) sources[idx + 1].id else null
-                                }
-                            }
-                            onSelectSource(nextSource)
-                        },
-                    )
-                }
-            }
+
 
             // Favorites chip
             item(key = "phone-fav-chip") {
@@ -1511,4 +1561,26 @@ private fun PhoneChannelRow(
         }
     }
 }
+
+private fun countryFlag(code: String): String = when (code.uppercase()) {
+    "TR" -> "🇹🇷 TR"
+    "DE" -> "🇩🇪 DE"
+    "UK", "GB" -> "🇬🇧 UK"
+    "US", "USA" -> "🇺🇸 US"
+    "FR" -> "🇫🇷 FR"
+    "NL" -> "🇳🇱 NL"
+    "IT" -> "🇮🇹 IT"
+    "ES" -> "🇪🇸 ES"
+    "AZ" -> "🇦🇿 AZ"
+    "AR" -> "🇸🇦 AR"
+    "RU" -> "🇷🇺 RU"
+    "CH" -> "🇨🇭 CH"
+    "AT" -> "🇦🇹 AT"
+    "BE" -> "🇧🇪 BE"
+    "SE" -> "🇸🇪 SE"
+    "NO" -> "🇳🇴 NO"
+    "DK" -> "🇩🇰 DK"
+    else -> "🌍 $code"
+}
+
 

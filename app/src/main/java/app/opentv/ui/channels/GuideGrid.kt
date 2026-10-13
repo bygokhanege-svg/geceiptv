@@ -5,9 +5,11 @@
  */
 package app.opentv.ui.channels
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -138,6 +140,7 @@ fun ChannelList(
     onSelectRow: (ChannelsViewModel.Row) -> Unit,
     onFocusRow: (ChannelsViewModel.Row) -> Unit,
     onToggleFavourite: (ChannelsViewModel.Row) -> Unit = {},
+    onLongSelectRow: (ChannelsViewModel.Row) -> Unit = {},
     onExitLeftFromChannel: () -> Boolean = { false },
     modifier: Modifier = Modifier,
 ) {
@@ -153,6 +156,7 @@ fun ChannelList(
                 nowMillis = now,
                 isSelected = row.key == selectedKey,
                 onSelect = { onSelectRow(row) },
+                onLongSelect = { onLongSelectRow(row) },
                 onFocus = { onFocusRow(row) },
                 onToggleFavourite = { onToggleFavourite(row) },
                 onExitLeft = onExitLeftFromChannel,
@@ -161,12 +165,14 @@ fun ChannelList(
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun ChannelListRow(
     row: ChannelsViewModel.Row,
     nowMillis: Long,
     isSelected: Boolean,
     onSelect: () -> Unit,
+    onLongSelect: () -> Unit,
     onFocus: () -> Unit,
     onToggleFavourite: () -> Unit,
     onExitLeft: () -> Boolean,
@@ -185,14 +191,23 @@ private fun ChannelListRow(
                 else Modifier,
             )
             // LEFT from a row reopens the collapsed rail, exactly like the grid's channel column.
+            // Long press OK from remote triggers channel hide option per Görev 4.
             .onPreviewKeyEvent { e ->
-                if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionLeft) onExitLeft() else false
+                if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionLeft) {
+                    onExitLeft()
+                } else if (e.type == KeyEventType.KeyDown && (e.key == Key.DirectionCenter || e.key == Key.Enter) && e.nativeKeyEvent.isLongPress) {
+                    onLongSelect()
+                    true
+                } else false
             }
             .onFocusChanged {
                 focused = it.isFocused
                 if (it.isFocused) onFocus()
             }
-            .clickable(onClick = onSelect)
+            .combinedClickable(
+                onClick = onSelect,
+                onLongClick = onLongSelect,
+            )
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
