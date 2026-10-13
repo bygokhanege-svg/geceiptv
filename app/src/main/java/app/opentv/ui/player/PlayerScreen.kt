@@ -184,8 +184,10 @@ fun PlayerScreen(
         window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         view.keepScreenOn = true
         onDispose {
-            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            view.keepScreenOn = false
+            if (!isTelevision) {
+                window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                view.keepScreenOn = false
+            }
             controller.release()
             scope.cancel()
         }
@@ -437,6 +439,7 @@ fun PlayerScreen(
                 PlayerView(ctx).apply {
                     player = controller.player
                     useController = false
+                    keepScreenOn = true
                     setKeepContentOnPlayerReset(true)
                     app.opentv.ui.settings.SubtitleStyleHelper.applySubtitlePreferences(subtitleView, settings)
                     layoutParams = ViewGroup.LayoutParams(

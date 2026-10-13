@@ -124,6 +124,7 @@ fun GuidePreview(
                     factory = { ctx ->
                         PlayerView(ctx).apply {
                             useController = false
+                            keepScreenOn = true
                             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                             setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
                             setBackgroundColor(android.graphics.Color.TRANSPARENT)

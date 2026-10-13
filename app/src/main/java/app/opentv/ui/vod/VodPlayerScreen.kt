@@ -400,8 +400,10 @@ fun VodPlayerScreen(
         window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         view.keepScreenOn = true
         onDispose {
-            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            view.keepScreenOn = false
+            if (!isTelevision) {
+                window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                view.keepScreenOn = false
+            }
             scope.launch { savePosition() }
             controller.release()
             scope.cancel()
@@ -517,6 +519,7 @@ fun VodPlayerScreen(
                 PlayerView(ctx).apply {
                     player = controller.player
                     useController = false
+                    keepScreenOn = true
                     setKeepContentOnPlayerReset(true)
                     app.opentv.ui.settings.SubtitleStyleHelper.applySubtitlePreferences(subtitleView, graph.settings)
                     layoutParams = ViewGroup.LayoutParams(

@@ -256,16 +256,19 @@ fun HomeScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // Hold the screen awake while the guide's live preview is playing — otherwise the box's
-    // screensaver fires while you're browsing with a channel running in the preview pane.
-    DisposableEffect(previewEnabled, screenResumed) {
+    // Hold the screen awake while the guide's live preview is playing (or permanently on TV).
+    DisposableEffect(previewEnabled, screenResumed, isTelevision) {
         val window = context.findActivity()?.window
-        if (previewEnabled && screenResumed) {
+        if (isTelevision || (previewEnabled && screenResumed)) {
             window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         } else {
             window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
-        onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+        onDispose {
+            if (!isTelevision) {
+                window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+        }
     }
 
     // Preview audio follows the setting; muted by default so browsing stays quiet.

@@ -102,6 +102,8 @@ import app.opentv.update.UpdateGate
 
 class MainActivity : ComponentActivity() {
 
+    private var isTelevisionDevice = false
+
     // Apply the chosen UI language before any view or resource is resolved. A language change in
     // settings calls recreate(), which re-runs this with the new tag.
     override fun attachBaseContext(newBase: Context) {
@@ -114,10 +116,19 @@ class MainActivity : ComponentActivity() {
         applyImmersiveFullscreen()
         handlePlayIntent(intent)
         val isTelevision = isRunningOnTelevision(this)
+        isTelevisionDevice = isTelevision
         requestedOrientation = if (isTelevision) {
             ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         } else {
             ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT
+        }
+
+        // On TV devices, keep the screen awake permanently while the app is in the foreground.
+        // This prevents Android TV / Google TV / Fire TV screensavers and Daydream ambient mode
+        // from triggering while using GECE IPTV.
+        if (isTelevision) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            window.decorView.keepScreenOn = true
         }
 
         setContent {
@@ -144,12 +155,20 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         applyImmersiveFullscreen()
+        if (isTelevisionDevice) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            window.decorView.keepScreenOn = true
+        }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) {
             applyImmersiveFullscreen()
+            if (isTelevisionDevice) {
+                window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                window.decorView.keepScreenOn = true
+            }
         }
     }
 
@@ -893,7 +912,8 @@ fun isRunningOnTelevision(context: Context): Boolean {
     val packageManager = context.packageManager
     if (packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK) ||
         packageManager.hasSystemFeature("android.hardware.type.television") ||
-        packageManager.hasSystemFeature("amazon.hardware.fire_tv")
+        packageManager.hasSystemFeature("amazon.hardware.fire_tv") ||
+        packageManager.hasSystemFeature("android.software.live_tv")
     ) {
         return true
     }
@@ -904,6 +924,16 @@ fun isRunningOnTelevision(context: Context): Boolean {
     val hasTouchscreen = packageManager.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN)
     val hasTelephony = packageManager.hasSystemFeature(PackageManager.FEATURE_TELEPHONY)
     if (!hasTouchscreen && !hasTelephony) {
+        return true
+    }
+
+    // Model, hardware, or device string markers common across TV and TV box vendors
+    val specs = (Build.MODEL + " " + Build.DEVICE + " " + Build.PRODUCT + " " + Build.BRAND + " " + Build.MANUFACTURER).lowercase()
+    if (specs.contains("android tv") || specs.contains("google tv") || specs.contains("fire tv") ||
+        specs.contains("firetv") || specs.contains("aft") || specs.contains("bravia") ||
+        specs.contains("mibox") || specs.contains("mitv") || specs.contains("shield") ||
+        specs.contains("chromecast")
+    ) {
         return true
     }
 
