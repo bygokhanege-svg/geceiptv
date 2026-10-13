@@ -200,6 +200,11 @@ class ManagerServer(
 
         val output = client.getOutputStream()
 
+        if (method == "OPTIONS") {
+            output.write(PairingHttp.corsOptionsResponse())
+            return
+        }
+
         // Every route checks the token. Without it, none of this exists.
         val supplied = query["t"] ?: ""
         if (token.isEmpty() || !PairingHttp.secretsMatch(supplied, token)) {

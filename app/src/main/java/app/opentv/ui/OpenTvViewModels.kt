@@ -1303,15 +1303,11 @@ class SyncViewModel(app: Application) : AndroidViewModel(app) {
  */
 class WebManagerViewModel(app: Application) : AndroidViewModel(app) {
     private val graph = ServiceLocator.get(app)
-    private val server = ManagerServer(viewModelScope, graph.catalogRepository, graph.settings, graph.sourceRepository)
+    private val server = graph.managerServer
 
     val state: StateFlow<ManagerServer.State> = server.state
 
     fun start() = server.start()
 
     fun stop() = server.stop()
-
-    override fun onCleared() {
-        server.stop()
-    }
 }

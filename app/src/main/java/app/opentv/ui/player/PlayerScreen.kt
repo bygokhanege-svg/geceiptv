@@ -398,6 +398,11 @@ fun PlayerScreen(
                         interaction++
                         false
                     }
+                    event.key == Key.MediaPlayPause || event.key == Key.MediaPlay || event.key == Key.MediaPause || event.key == Key.Spacebar -> {
+                        paused = !paused
+                        controller.player.playWhenReady = !paused
+                        reveal(); interaction++; true
+                    }
                     // Channel up/down works whether or not the bar is showing — this remote has no
                     // CH+/CH- keys, so up/down IS the channel changer. Each zap flashes the bar as a
                     // channel banner, then it auto-hides.

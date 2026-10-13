@@ -59,6 +59,7 @@ import androidx.navigation.compose.rememberNavController
 import app.opentv.core.AppSettings
 import app.opentv.core.LicenseManager
 import app.opentv.core.ServiceLocator
+import app.opentv.data.model.shownName
 import app.opentv.data.parser.displayTitle
 import app.opentv.ui.MainScreen
 import app.opentv.ui.ProfilesViewModel
@@ -204,7 +205,7 @@ object Routes {
     const val HOME = "home"
     const val ADD_SOURCE = "add-source"
     const val PLAYER = "player/{channelId}"
-    const val SEARCH = "search"
+    const val SEARCH = "search?q={q}"
     const val EPG_SETTINGS = "epg-settings"
     const val APP_SETTINGS = "app-settings"
     const val LANGUAGE = "language"
@@ -235,6 +236,8 @@ object Routes {
     const val MULTIVIEW = "multiview?channelId={channelId}"
     const val ADMIN_PANEL = "admin-panel"
 
+    fun search(query: String = ""): String =
+        if (query.isNotBlank()) "search?q=${java.net.URLEncoder.encode(query, "UTF-8")}" else "search"
     fun player(channelId: Long) = "player/$channelId"
     fun multiView(channelId: Long? = null): String =
         if (channelId != null) "multiview?channelId=$channelId" else "multiview"
@@ -337,22 +340,29 @@ private fun GeceIptvApp(isTelevision: Boolean) {
     // Handle remote control commands from phone/web companion
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager }
     val componentActivity = context as? ComponentActivity
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     LaunchedEffect(Unit) {
         app.opentv.core.RemoteControlSignals.commands.collect { cmd ->
             when (cmd) {
                 is app.opentv.core.RemoteControlSignals.RemoteCommand.PlayChannel -> {
-                    navController.navigate(Routes.player(cmd.channelId))
+                    navController.navigate(Routes.player(cmd.channelId)) {
+                        popUpTo(Routes.HOME) { inclusive = false }
+                        launchSingleTop = true
+                    }
                 }
                 is app.opentv.core.RemoteControlSignals.RemoteCommand.Home -> {
                     navController.navigate(Routes.HOME) {
                         popUpTo(Routes.HOME) { inclusive = false }
+                        launchSingleTop = true
                     }
                 }
                 is app.opentv.core.RemoteControlSignals.RemoteCommand.Back -> {
                     componentActivity?.onBackPressedDispatcher?.onBackPressed()
                 }
                 is app.opentv.core.RemoteControlSignals.RemoteCommand.SearchText -> {
-                    navController.navigate(Routes.SEARCH)
+                    navController.navigate(Routes.search(cmd.query)) {
+                        launchSingleTop = true
+                    }
                 }
                 is app.opentv.core.RemoteControlSignals.RemoteCommand.VolumeUp -> {
                     audioManager?.adjustStreamVolume(
@@ -389,8 +399,36 @@ private fun GeceIptvApp(isTelevision: Boolean) {
                         else -> null
                     }
                     if (keyCode != null && componentActivity != null) {
-                        componentActivity.window.decorView.dispatchKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, keyCode))
-                        componentActivity.window.decorView.dispatchKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, keyCode))
+                        val now = android.os.SystemClock.uptimeMillis()
+                        val down = android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_DOWN, keyCode, 0)
+                        val up = android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_UP, keyCode, 0)
+
+                        // 1. Dispatch through Activity
+                        val dHandled = componentActivity.dispatchKeyEvent(down)
+                        val uHandled = componentActivity.dispatchKeyEvent(up)
+                        val handled = dHandled || uHandled
+
+                        // 2. Direct fallback navigation via Compose focus manager if unhandled by window
+                        if (!handled) {
+                            when (cmd) {
+                                app.opentv.core.RemoteControlSignals.RemoteCommand.Up ->
+                                    focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Up)
+                                app.opentv.core.RemoteControlSignals.RemoteCommand.Down ->
+                                    focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Down)
+                                app.opentv.core.RemoteControlSignals.RemoteCommand.Left ->
+                                    focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Left)
+                                app.opentv.core.RemoteControlSignals.RemoteCommand.Right ->
+                                    focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Right)
+                                app.opentv.core.RemoteControlSignals.RemoteCommand.Select -> {
+                                    val enterDown = android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_ENTER, 0)
+                                    val enterUp = android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_ENTER, 0)
+                                    val target = componentActivity.currentFocus ?: componentActivity.window.decorView
+                                    target.dispatchKeyEvent(enterDown)
+                                    target.dispatchKeyEvent(enterUp)
+                                }
+                                else -> Unit
+                            }
+                        }
                     }
                 }
             }
@@ -503,8 +541,19 @@ private fun GeceIptvApp(isTelevision: Boolean) {
                 )
             }
 
-            composable(Routes.SEARCH) {
+            composable(
+                route = Routes.SEARCH,
+                arguments = listOf(
+                    navArgument("q") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
+                ),
+            ) { entry ->
+                val initialQuery = entry.arguments?.getString("q") ?: ""
                 SearchScreen(
+                    initialQuery = initialQuery,
                     onPlayChannel = { channel -> navController.navigate(Routes.player(channel.id)) },
                     onPlayMovie = { movie ->
                         navController.navigate(
@@ -637,6 +686,14 @@ private fun GeceIptvApp(isTelevision: Boolean) {
                     initialChannelId = channelId,
                     onBack = { navController.popBackStack() },
                     onPlayFullscreen = { channel ->
+                        app.opentv.player.PlaybackQueue.items = listOf(
+                            app.opentv.player.PlaybackQueue.Item(
+                                id = channel.id,
+                                name = channel.shownName,
+                                logoUrl = channel.logoUrl,
+                                number = channel.number,
+                            ),
+                        )
                         navController.navigate(Routes.player(channel.id))
                     },
                 )

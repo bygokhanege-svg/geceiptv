@@ -124,6 +124,9 @@ object PairingHttp {
             append("Content-Type: ").append(contentType).append("; charset=utf-8\r\n")
             append("Content-Length: ").append(bytes.size).append("\r\n")
             append("Connection: close\r\n")
+            append("Access-Control-Allow-Origin: *\r\n")
+            append("Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n")
+            append("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With\r\n")
             // This page exists for a few minutes on a private network and handles
             // credentials. Nothing about it should be cached or indexed anywhere.
             append("Cache-Control: no-store\r\n")
@@ -133,4 +136,13 @@ object PairingHttp {
         }
         return head.toByteArray(Charsets.US_ASCII) + bytes
     }
+
+    fun corsOptionsResponse(): ByteArray =
+        ("HTTP/1.1 204 No Content\r\n" +
+            "Access-Control-Allow-Origin: *\r\n" +
+            "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n" +
+            "Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With\r\n" +
+            "Access-Control-Max-Age: 86400\r\n" +
+            "Content-Length: 0\r\n" +
+            "Connection: close\r\n\r\n").toByteArray(Charsets.US_ASCII)
 }

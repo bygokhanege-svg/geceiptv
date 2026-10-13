@@ -252,6 +252,14 @@ fun MultiViewScreen(
         slotActionMenuIndex = null
         if (ch != null) {
             controllers.forEach { it.stop() }
+            PlaybackQueue.items = listOf(
+                PlaybackQueue.Item(
+                    id = ch.id,
+                    name = ch.shownName,
+                    logoUrl = ch.logoUrl,
+                    number = ch.number,
+                ),
+            )
             onPlayFullscreen(ch)
         }
     }
@@ -1080,15 +1088,13 @@ private fun InSlotActionMenu(
                 } else {
                     false
                 }
-            }
-            .clickable { onClose() },
+            },
         contentAlignment = Alignment.Center,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 14.dp, vertical = 8.dp)
-                .clickable(enabled = false) {}
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -1173,7 +1179,7 @@ private fun InSlotActionRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .background(
-                if (isFocused) Color(0xFF1E293B) else Color(0x99111827),
+                if (isFocused) Color(0xFF0284C7).copy(alpha = 0.55f) else Color(0x99111827),
             )
             .border(
                 width = if (isFocused) 2.dp else 1.dp,
@@ -1182,9 +1188,16 @@ private fun InSlotActionRow(
             )
             .let { if (focusRequester != null) it.focusRequester(focusRequester) else it }
             .onFocusChanged { isFocused = it.isFocused }
-            .focusable()
+            .onPreviewKeyEvent { event ->
+                if (event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter) {
+                    if (event.type == KeyEventType.KeyUp) {
+                        onClick()
+                    }
+                    true
+                } else false
+            }
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
@@ -1303,7 +1316,14 @@ private fun InSlotChannelPicker(
                         CircleShape,
                     )
                     .onFocusChanged { isCloseFocused = it.isFocused }
-                    .focusable()
+                    .onPreviewKeyEvent { event ->
+                        if (event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter) {
+                            if (event.type == KeyEventType.KeyUp) {
+                                onClose()
+                            }
+                            true
+                        } else false
+                    }
                     .clickable(onClick = onClose),
                 contentAlignment = Alignment.Center,
             ) {
@@ -1401,7 +1421,14 @@ private fun InSlotCategoryChip(
                 RoundedCornerShape(12.dp),
             )
             .onFocusChanged { isFocused = it.isFocused }
-            .focusable()
+            .onPreviewKeyEvent { event ->
+                if (event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter) {
+                    if (event.type == KeyEventType.KeyUp) {
+                        onClick()
+                    }
+                    true
+                } else false
+            }
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 4.dp),
     ) {
@@ -1444,7 +1471,14 @@ private fun InSlotChannelRow(
             )
             .let { if (focusRequester != null) it.focusRequester(focusRequester) else it }
             .onFocusChanged { isFocused = it.isFocused }
-            .focusable()
+            .onPreviewKeyEvent { event ->
+                if (event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter) {
+                    if (event.type == KeyEventType.KeyUp) {
+                        onClick()
+                    }
+                    true
+                } else false
+            }
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,

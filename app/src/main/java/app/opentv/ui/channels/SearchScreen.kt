@@ -69,6 +69,7 @@ import java.util.Locale
  */
 @Composable
 fun SearchScreen(
+    initialQuery: String = "",
     onPlayChannel: (Channel) -> Unit,
     onPlayMovie: (Movie) -> Unit,
     onOpenSeries: (Series) -> Unit,
@@ -76,7 +77,7 @@ fun SearchScreen(
     viewModel: ChannelsViewModel = viewModel(),
     vodViewModel: VodViewModel = viewModel(),
 ) {
-    var query by remember { mutableStateOf("") }
+    var query by remember(initialQuery) { mutableStateOf(initialQuery) }
     val channelResults by viewModel.searchResults.collectAsState()
     val movieResults by vodViewModel.movieResults.collectAsState()
     val seriesResults by vodViewModel.seriesResults.collectAsState()

@@ -154,5 +154,14 @@ object ServiceLocator {
                 database.channels(), epgRepository,
             )
         }
+
+        val managerServer: app.opentv.pairing.ManagerServer by lazy {
+            app.opentv.pairing.ManagerServer(
+                scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO),
+                catalog = catalogRepository,
+                settings = settings,
+                sourceRepository = sourceRepository,
+            )
+        }
     }
 }
