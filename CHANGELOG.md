@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.12.04
+
+- **Telefon Arayüzü Film & Dizi Ekranı:** Sol dikey kategori rayı kaldırılarak üst yatay kaydırılabilir kategori çipleri, kategori arama butonu ve tam ekran 3 sütunlu modern afiş ızgarası getirildi.
+- **Film Detay & "TV'ye Gönder" Butonu:** Kapak ve buton yerleşimi mobilde düzeltildi; dikey sıkışan TV'ye Gönder butonu tek satırlı yatay kaydırma çubuğuna alındı.
+- **Ayarlar Menüleri Mobil Uyumu:** Cihaz ve Lisans, Sağlayıcılar, Kanallar, Görüntü & Oynatma ve Telefon Kumandası menülerindeki tüm kartlar ve yazılar telefon boyutlarına tam oturacak şekilde dikey/kaydırılabilir yapıya kavuşturuldu.
+- **TV Ana Sayfa Buton Sıralaması:** Arama, Ayarlar ve Çoklu TV butonları üstteki Canlı TV / Film / Dizi ızgarasının hemen altına alındı.
+- **3 Seçenekli Kategori Gizleme:** Canlı TV, Film ve Dizi kategorilerine basılı tutulduğunda doğrudan gizlemek yerine "Aç", "Gizle" ve "İptal" seçeneklerini sunan açılır diyalog eklendi.
+
+## 0.12.03
+
+- **Sabit TV Ana Sayfası:** Sol hareketli menü kaldırıldı, sabit ve şık gezinti butonları eklendi.
+- **Aktif Sağlayıcı İzolasyonu:** Yalnızca seçili sağlayıcının içerikleri aktif olur.
+- **Otomatik TV Eşitleme:** Telefondaki sağlayıcılar TV ile eşleşince otomatik TV'ye aktarılır.
+- **Canlı TV Ülke Filtreleme:** Canlı TV ülke bazlı gruplandırıldı.
+- **Gece/Gündüz Teması:** Tema değiştirme butonu saat ve tarihin yanına alındı.
+- **Akıllı Telefon Kumandası & Cast:** Web kumandasına TV kısayolları ve TV'ye gönder özelliği eklendi.
+- **Hızlandırılmış VOD:** Spesifik adet ve yüzde bildirimli adım adım VOD yükleme mekanizması.
+
 ## 0.11.8
 
 - **Edit a saved provider.** Settings → Providers now has an **Edit** button on each provider, so you
