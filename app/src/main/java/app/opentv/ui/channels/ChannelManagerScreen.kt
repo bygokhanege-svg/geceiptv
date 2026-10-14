@@ -21,7 +21,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
@@ -128,77 +130,88 @@ fun ChannelManagerScreen(
         }
     }
 
+    val isPhone = LocalConfiguration.current.screenWidthDp < 600
+
     Column(Modifier.fillMaxSize()) {
-        // Top bar: title + Done (Back also exits via BackHandler). Kept out of the two panes so
-        // pressing RIGHT from a category lands in the channel list, not on this button.
+        // Top bar: title + Done
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 16.dp),
+            Modifier.fillMaxWidth().padding(horizontal = if (isPhone) 16.dp else 28.dp, vertical = if (isPhone) 12.dp else 16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(stringResource(R.string.channels_manager_title), style = MaterialTheme.typography.headlineMedium)
+            Text(
+                stringResource(R.string.channels_manager_title),
+                style = if (isPhone) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+            )
             Spacer(Modifier.weight(1f))
             OutlinedButton(onClick = onBack) { Text(stringResource(R.string.common_done)) }
         }
 
-        Row(Modifier.weight(1f).fillMaxWidth()) {
-            // ---- LEFT pane: Search, an optional source filter, and the category list ----------
-            LazyColumn(
+        if (isPhone) {
+            // PHONE: Horizontal category strip + full-width channel pane
+            LazyRow(
                 modifier = Modifier
-                    .width(280.dp)
-                    .fillMaxHeight()
-                    .background(MaterialTheme.colorScheme.surface),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                    .padding(vertical = 8.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                item {
-                    RailEntry(
-                        label = stringResource(R.string.nav_search),
-                        selected = searchMode,
-                        onClick = { searchMode = true },
-                        modifier = if (searchMode) Modifier.focusRequester(railFocusRequester) else Modifier,
-                    )
-                }
-
-                // Source filter — only when there's more than one provider, so a second source can
-                // be viewed on its own instead of merged into everything else.
-                if (sources.size > 1) {
-                    item { SectionLabel(stringResource(R.string.channels_manager_source_header)) }
-                    item {
-                        RailEntry(
-                            label = stringResource(R.string.channels_manager_all_sources),
-                            selected = selectedSource == null,
-                            onClick = { searchMode = false; viewModel.selectManagerSource(null) },
-                        )
-                    }
-                    items(sources, key = { "src-${it.id}" }) { source ->
-                        RailEntry(
-                            label = source.name,
-                            selected = selectedSource == source.id,
-                            onClick = { searchMode = false; viewModel.selectManagerSource(source.id) },
+                item(key = "phone_search") {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(if (searchMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                            .clickable { searchMode = true }
+                            .padding(horizontal = 14.dp, vertical = 7.dp),
+                    ) {
+                        Text(
+                            text = "🔍 " + stringResource(R.string.nav_search),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = if (searchMode) FontWeight.Bold else FontWeight.Medium,
+                            color = if (searchMode) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
                         )
                     }
                 }
 
-                item { SectionLabel(stringResource(R.string.channels_manager_categories_header)) }
-                items(categoryGroups, key = { "cat-${it.key}" }) { group ->
-                    val groupSelected = !searchMode && selectedCategory == group.key
+                items(categoryGroups, key = { "phone_cat_${it.key}" }) { group ->
+                    val isSelected = !searchMode && selectedCategory == group.key
                     val isHidden = group.key in hiddenCategories
-                    CategoryRailEntry(
-                        label = group.label,
-                        selected = groupSelected,
-                        isGroupHidden = isHidden,
-                        onClick = { searchMode = false; viewModel.selectManagerCategory(group.key) },
-                        modifier = if (groupSelected) Modifier.focusRequester(railFocusRequester) else Modifier,
-                    )
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(
+                                if (isSelected) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.surfaceVariant
+                            )
+                            .clickable {
+                                searchMode = false
+                                viewModel.selectManagerCategory(group.key)
+                            }
+                            .padding(horizontal = 14.dp, vertical = 7.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = group.label,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                            )
+                            if (isHidden) {
+                                Spacer(Modifier.width(4.dp))
+                                Text("👁️", fontSize = 10.sp)
+                            }
+                        }
+                    }
                 }
             }
 
-            // ---- RIGHT pane: the search UI, or the selected category's channels ---------------
+            // Full-width Content Pane
             Column(
                 Modifier
                     .weight(1f)
-                    .fillMaxHeight()
-                    .padding(horizontal = 24.dp, vertical = 12.dp),
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
             ) {
                 if (searchMode) {
                     SearchPane(
@@ -230,6 +243,97 @@ fun ChannelManagerScreen(
                         onToggleHidden = { row, hidden -> viewModel.setRowHidden(row, !hidden) },
                         onToggleFavourite = { viewModel.toggleFavourite(it) },
                     )
+                }
+            }
+        } else {
+            // TV: 2-pane row
+            Row(Modifier.weight(1f).fillMaxWidth()) {
+                LazyColumn(
+                    modifier = Modifier
+                        .width(280.dp)
+                        .fillMaxHeight()
+                        .background(MaterialTheme.colorScheme.surface),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    item {
+                        RailEntry(
+                            label = stringResource(R.string.nav_search),
+                            selected = searchMode,
+                            onClick = { searchMode = true },
+                            modifier = if (searchMode) Modifier.focusRequester(railFocusRequester) else Modifier,
+                        )
+                    }
+
+                    if (sources.size > 1) {
+                        item { SectionLabel(stringResource(R.string.channels_manager_source_header)) }
+                        item {
+                            RailEntry(
+                                label = stringResource(R.string.channels_manager_all_sources),
+                                selected = selectedSource == null,
+                                onClick = { searchMode = false; viewModel.selectManagerSource(null) },
+                            )
+                        }
+                        items(sources, key = { "src-${it.id}" }) { source ->
+                            RailEntry(
+                                label = source.name,
+                                selected = selectedSource == source.id,
+                                onClick = { searchMode = false; viewModel.selectManagerSource(source.id) },
+                            )
+                        }
+                    }
+
+                    item { SectionLabel(stringResource(R.string.channels_manager_categories_header)) }
+                    items(categoryGroups, key = { "cat-${it.key}" }) { group ->
+                        val groupSelected = !searchMode && selectedCategory == group.key
+                        val isHidden = group.key in hiddenCategories
+                        CategoryRailEntry(
+                            label = group.label,
+                            selected = groupSelected,
+                            isGroupHidden = isHidden,
+                            onClick = { searchMode = false; viewModel.selectManagerCategory(group.key) },
+                            modifier = if (groupSelected) Modifier.focusRequester(railFocusRequester) else Modifier,
+                        )
+                    }
+                }
+
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .padding(horizontal = 24.dp, vertical = 12.dp),
+                ) {
+                    if (searchMode) {
+                        SearchPane(
+                            query = query,
+                            results = searchResults,
+                            onKey = { if (query.length < 40) query += it },
+                            onSpace = { if (query.length < 40) query += " " },
+                            onBackspace = { query = query.dropLast(1) },
+                            onClear = { query = "" },
+                            onToggleHidden = { row, hidden -> viewModel.setRowHidden(row, !hidden) },
+                            onToggleFavourite = { viewModel.toggleFavourite(it) },
+                        )
+                    } else {
+                        val currentGroup = categoryGroups.firstOrNull { it.key == selectedCategory }
+                        val isGroupHidden = currentGroup?.let {
+                            it.key in hiddenCategories || (browseRows.isNotEmpty() && browseRows.all { row -> row.variants.all { v -> v.hidden } })
+                        } ?: false
+
+                        BrowsePane(
+                            hasCategories = categoryGroups.isNotEmpty(),
+                            categorySelected = selectedCategory != null,
+                            group = currentGroup,
+                            isGroupHidden = isGroupHidden,
+                            rows = browseRows,
+                            onExitLeft = onExitLeftToRail,
+                            onSetGroupHidden = { hidden ->
+                                currentGroup?.let { viewModel.setGroupHidden(it, hidden) }
+                            },
+                            onToggleHidden = { row, hidden -> viewModel.setRowHidden(row, !hidden) },
+                            onToggleFavourite = { viewModel.toggleFavourite(it) },
+                        )
+                    }
                 }
             }
         }
@@ -358,6 +462,8 @@ private fun GroupHeaderCard(
     var hideAllFocused by remember { mutableStateOf(false) }
     var showAllFocused by remember { mutableStateOf(false) }
 
+    val isPhone = LocalConfiguration.current.screenWidthDp < 600
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -371,11 +477,138 @@ private fun GroupHeaderCard(
             )
             .padding(horizontal = 14.dp, vertical = 10.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
+        if (isPhone) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = group.label,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(
+                                if (isGroupHidden) MaterialTheme.colorScheme.error.copy(alpha = 0.15f)
+                                else Color(0xFF22C55E).copy(alpha = 0.15f)
+                            )
+                            .padding(horizontal = 7.dp, vertical = 2.dp),
+                    ) {
+                        Text(
+                            text = if (isGroupHidden) stringResource(R.string.channels_manager_group_hidden)
+                            else stringResource(R.string.channels_manager_group_visible),
+                            color = if (isGroupHidden) MaterialTheme.colorScheme.error else Color(0xFF22C55E),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "$totalCount kanal • $hiddenCount gizli",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    // Group Toggle Switch Card
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(
+                                if (switchFocused) MaterialTheme.colorScheme.primaryContainer
+                                else MaterialTheme.colorScheme.surfaceVariant
+                            )
+                            .border(
+                                1.dp,
+                                if (switchFocused) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                                RoundedCornerShape(8.dp),
+                            )
+                            .clickable(onClick = onToggleGroupHidden)
+                            .onFocusChanged { switchFocused = it.isFocused }
+                            .focusable()
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = if (isGroupHidden) stringResource(R.string.channels_manager_group_hidden)
+                                else stringResource(R.string.channels_manager_hide_group),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Switch(
+                                checked = !isGroupHidden,
+                                onCheckedChange = { onToggleGroupHidden() },
+                            )
+                        }
+                    }
+
+                    // Button: Tümünü Gizle
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (hideAllFocused) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.surfaceVariant)
+                            .border(
+                                1.dp,
+                                if (hideAllFocused) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                                RoundedCornerShape(8.dp),
+                            )
+                            .clickable(onClick = onHideAll)
+                            .onFocusChanged { hideAllFocused = it.isFocused }
+                            .focusable()
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.channels_manager_hide_all),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (hideAllFocused) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+
+                    // Button: Tümünü Göster
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (showAllFocused) Color(0xFF22C55E) else MaterialTheme.colorScheme.surfaceVariant)
+                            .border(
+                                1.dp,
+                                if (showAllFocused) Color(0xFF22C55E) else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                                RoundedCornerShape(8.dp),
+                            )
+                            .clickable(onClick = onShowAll)
+                            .onFocusChanged { showAllFocused = it.isFocused }
+                            .focusable()
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.channels_manager_show_all),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (showAllFocused) Color.White else MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                }
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -505,6 +738,7 @@ private fun GroupHeaderCard(
             }
         }
     }
+}
 }
 
 @Composable

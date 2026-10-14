@@ -43,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -72,16 +73,25 @@ fun ProvidersScreen(
     val speedTestState by viewModel.speedTest.collectAsState()
     var pendingRemove by remember { mutableStateOf<Source?>(null) }
 
+    val isPhone = LocalConfiguration.current.screenWidthDp < 600
+
     Column(
         Modifier
             .fillMaxSize()
-            .padding(horizontal = 32.dp, vertical = 24.dp),
+            .padding(horizontal = if (isPhone) 16.dp else 32.dp, vertical = if (isPhone) 16.dp else 24.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(R.string.settings_providers_title), style = MaterialTheme.typography.headlineMedium)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(
+                stringResource(R.string.settings_providers_title),
+                style = if (isPhone) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+            )
             Spacer(Modifier.weight(1f))
             OutlinedButton(onClick = onAddSource) { Text(stringResource(R.string.providers_add)) }
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(8.dp))
             OutlinedButton(onClick = onBack) { Text(stringResource(R.string.common_done)) }
         }
 
@@ -210,6 +220,8 @@ private fun ProviderRow(
     onSetLiveFormat: (LiveStreamFormat) -> Unit,
     onRunSpeedTest: () -> Unit,
 ) {
+    val isPhone = LocalConfiguration.current.screenWidthDp < 600
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -217,51 +229,107 @@ private fun ProviderRow(
         Column(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 14.dp),
+                .padding(horizontal = if (isPhone) 14.dp else 18.dp, vertical = 14.dp),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(source.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Spacer(Modifier.width(8.dp))
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
-                        ) {
-                            Text(
-                                source.kind.name,
-                                color = MaterialTheme.colorScheme.primary,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        }
+            if (isPhone) {
+                // Mobile layout: Title & Host on top, Actions on bottom
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(source.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                    ) {
+                        Text(
+                            source.kind.name,
+                            color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                        )
                     }
-                    Spacer(Modifier.height(3.dp))
-                    Text(
-                        hostOf(source.url),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                 }
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    hostOf(source.url),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                Spacer(Modifier.height(10.dp))
 
                 if (confirming) {
-                    Text(
-                        stringResource(R.string.providers_remove_confirm),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    TextButton(onClick = onConfirmRemove) { Text(stringResource(R.string.providers_yes_remove)) }
-                    TextButton(onClick = onCancelRemove) { Text(stringResource(R.string.common_cancel)) }
-                } else {
-                    FilledTonalButton(onClick = onRunSpeedTest) {
-                        Text("⚡ Hız Testi")
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            stringResource(R.string.providers_remove_confirm),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        TextButton(onClick = onConfirmRemove) { Text(stringResource(R.string.providers_yes_remove)) }
+                        TextButton(onClick = onCancelRemove) { Text(stringResource(R.string.common_cancel)) }
                     }
-                    Spacer(Modifier.width(6.dp))
-                    TextButton(onClick = onEdit) { Text(stringResource(R.string.common_edit)) }
-                    TextButton(onClick = onAskRemove) { Text(stringResource(R.string.common_remove)) }
+                } else {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        FilledTonalButton(onClick = onRunSpeedTest) {
+                            Text("⚡ Hız Testi")
+                        }
+                        TextButton(onClick = onEdit) { Text(stringResource(R.string.common_edit)) }
+                        TextButton(onClick = onAskRemove) { Text(stringResource(R.string.common_remove)) }
+                    }
+                }
+            } else {
+                // TV layout: Single horizontal row
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(source.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.width(8.dp))
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                            ) {
+                                Text(
+                                    source.kind.name,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            hostOf(source.url),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+
+                    if (confirming) {
+                        Text(
+                            stringResource(R.string.providers_remove_confirm),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        TextButton(onClick = onConfirmRemove) { Text(stringResource(R.string.providers_yes_remove)) }
+                        TextButton(onClick = onCancelRemove) { Text(stringResource(R.string.common_cancel)) }
+                    } else {
+                        FilledTonalButton(onClick = onRunSpeedTest) {
+                            Text("⚡ Hız Testi")
+                        }
+                        Spacer(Modifier.width(6.dp))
+                        TextButton(onClick = onEdit) { Text(stringResource(R.string.common_edit)) }
+                        TextButton(onClick = onAskRemove) { Text(stringResource(R.string.common_remove)) }
+                    }
                 }
             }
 

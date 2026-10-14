@@ -5,10 +5,13 @@
  */
 package app.opentv.ui.vod
 
+import android.widget.Toast
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -29,12 +33,16 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -49,11 +57,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.opentv.R
 import app.opentv.data.model.Movie
@@ -114,61 +131,146 @@ fun MoviesScreen(
     val hasContent = resume.isNotEmpty() || recommended.isNotEmpty() ||
         recentlyAdded.isNotEmpty() || genreRows.isNotEmpty()
 
-    Row(Modifier.fillMaxSize()) {
-        Column(
-            Modifier
-                .width(260.dp)
-                .fillMaxHeight()
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-        ) {
-            SearchAffordance(onOpenSearch)
-            if (browseCategory != null) {
-                SortAffordance(sortOption) {
+    val isPhone = LocalConfiguration.current.screenWidthDp < 600
+    var showCategoryDialog by remember { mutableStateOf(false) }
+    var phoneActionTarget by remember { mutableStateOf<VodActionTarget?>(null) }
+
+    if (isPhone) {
+        Column(Modifier.fillMaxSize()) {
+            VodPhoneTopBar(
+                onOpenSearch = onOpenSearch,
+                browseCategory = browseCategory,
+                sortOption = sortOption,
+                onNextSort = {
                     sortOption = SortOption.entries[(sortOption.ordinal + 1) % SortOption.entries.size]
-                }
-            }
-            if (sources.size > 1 && selectedSource == null) {
-                ProviderMenu(
-                    sources = sources,
-                    selected = selectedSource,
-                    onSelectAll = { browseCategory = null; viewModel.selectVodSource(null) },
-                    onSelectSource = { id -> browseCategory = null; viewModel.selectVodSource(id) },
-                )
-            }
-            CategoryMenu(
-                entries = categories.map { it.id to it.name },
-                selected = browseCategory,
+                },
+                onOpenAllCategories = { showCategoryDialog = true },
+            )
+
+            VodPhoneCategoryRow(
+                categories = categories.map { it.id to it.name },
+                selectedCategory = browseCategory,
                 onSelectHome = { browseCategory = null },
                 onSelectCategory = { id -> browseCategory = id; viewModel.selectMovieCategory(id) },
+                onRequestAction = { phoneActionTarget = it },
             )
-        }
 
-        Box(Modifier.weight(1f).fillMaxHeight()) {
-            when {
-                browseCategory != null -> MovieCategoryGrid(sortedMovies, viewModel, onOpenMovie)
-                !hasContent -> when {
-                    vodLoading || isSyncing -> LoadingVod(stringResource(R.string.vod_loading_movies))
-                    hasSources -> EmptyVod(stringResource(R.string.vod_no_movies), stringResource(R.string.vod_no_movies_provider))
-                    else -> EmptyVod(stringResource(R.string.vod_no_movies), stringResource(R.string.vod_no_movies_add))
-                }
-                else -> LazyColumn(
-                    contentPadding = PaddingValues(vertical = 16.dp, horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
-                    modifier = Modifier.fillMaxSize(),
-                ) {
-                    if (resume.isNotEmpty()) item(key = "cw") { ContinueWatchingRow(resume, onResume) }
-                    if (recommended.isNotEmpty()) item(key = "rec") {
-                        MoviePosterRow(stringResource(R.string.vod_recommended), recommended, onOpenMovie)
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                when {
+                    browseCategory != null -> MovieCategoryGrid(sortedMovies, viewModel, onOpenMovie)
+                    !hasContent -> when {
+                        vodLoading || isSyncing -> LoadingVod(stringResource(R.string.vod_loading_movies))
+                        hasSources -> EmptyVod(stringResource(R.string.vod_no_movies), stringResource(R.string.vod_no_movies_provider))
+                        else -> EmptyVod(stringResource(R.string.vod_no_movies), stringResource(R.string.vod_no_movies_add))
                     }
-                    if (recentlyAdded.isNotEmpty()) item(key = "recent") {
-                        MoviePosterRow(stringResource(R.string.vod_recently_added), recentlyAdded, onOpenMovie)
-                    }
-                    items(genreRows, key = { "g:${it.genre}" }) { group ->
-                        MoviePosterRow(group.genre, group.items, onOpenMovie)
+                    else -> LazyColumn(
+                        contentPadding = PaddingValues(vertical = 12.dp, horizontal = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
+                        if (resume.isNotEmpty()) item(key = "cw") { ContinueWatchingRow(resume, onResume) }
+                        if (recommended.isNotEmpty()) item(key = "rec") {
+                            MoviePosterRow(stringResource(R.string.vod_recommended), recommended, onOpenMovie)
+                        }
+                        if (recentlyAdded.isNotEmpty()) item(key = "recent") {
+                            MoviePosterRow(stringResource(R.string.vod_recently_added), recentlyAdded, onOpenMovie)
+                        }
+                        items(genreRows, key = { "g:${it.genre}" }) { group ->
+                            MoviePosterRow(group.genre, group.items, onOpenMovie)
+                        }
                     }
                 }
             }
         }
+    } else {
+        Row(Modifier.fillMaxSize()) {
+            Column(
+                Modifier
+                    .width(260.dp)
+                    .fillMaxHeight()
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+            ) {
+                SearchAffordance(onOpenSearch)
+                if (browseCategory != null) {
+                    SortAffordance(sortOption) {
+                        sortOption = SortOption.entries[(sortOption.ordinal + 1) % SortOption.entries.size]
+                    }
+                }
+                if (sources.size > 1 && selectedSource == null) {
+                    ProviderMenu(
+                        sources = sources,
+                        selected = selectedSource,
+                        onSelectAll = { browseCategory = null; viewModel.selectVodSource(null) },
+                        onSelectSource = { id -> browseCategory = null; viewModel.selectVodSource(id) },
+                    )
+                }
+                CategoryMenu(
+                    entries = categories.map { it.id to it.name },
+                    selected = browseCategory,
+                    onSelectHome = { browseCategory = null },
+                    onSelectCategory = { id -> browseCategory = id; viewModel.selectMovieCategory(id) },
+                    onHideCategories = { ids, _ ->
+                        if (browseCategory in ids) {
+                            browseCategory = null
+                            viewModel.selectMovieCategory(null)
+                        }
+                        viewModel.hideCategories(ids)
+                    },
+                )
+            }
+
+            Box(Modifier.weight(1f).fillMaxHeight()) {
+                when {
+                    browseCategory != null -> MovieCategoryGrid(sortedMovies, viewModel, onOpenMovie)
+                    !hasContent -> when {
+                        vodLoading || isSyncing -> LoadingVod(stringResource(R.string.vod_loading_movies))
+                        hasSources -> EmptyVod(stringResource(R.string.vod_no_movies), stringResource(R.string.vod_no_movies_provider))
+                        else -> EmptyVod(stringResource(R.string.vod_no_movies), stringResource(R.string.vod_no_movies_add))
+                    }
+                    else -> LazyColumn(
+                        contentPadding = PaddingValues(vertical = 16.dp, horizontal = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
+                        if (resume.isNotEmpty()) item(key = "cw") { ContinueWatchingRow(resume, onResume) }
+                        if (recommended.isNotEmpty()) item(key = "rec") {
+                            MoviePosterRow(stringResource(R.string.vod_recommended), recommended, onOpenMovie)
+                        }
+                        if (recentlyAdded.isNotEmpty()) item(key = "recent") {
+                            MoviePosterRow(stringResource(R.string.vod_recently_added), recentlyAdded, onOpenMovie)
+                        }
+                        items(genreRows, key = { "g:${it.genre}" }) { group ->
+                            MoviePosterRow(group.genre, group.items, onOpenMovie)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showCategoryDialog) {
+        VodAllCategoriesDialog(
+            categories = categories.map { it.id to it.name },
+            selectedCategory = browseCategory,
+            onDismiss = { showCategoryDialog = false },
+            onSelectHome = { browseCategory = null },
+            onSelectCategory = { id -> browseCategory = id; viewModel.selectMovieCategory(id) },
+            onRequestAction = { phoneActionTarget = it },
+        )
+    }
+
+    phoneActionTarget?.let { target ->
+        VodActionModal(
+            target = target,
+            onDismiss = { phoneActionTarget = null },
+            onHideCategories = { ids, _ ->
+                if (browseCategory in ids) {
+                    browseCategory = null
+                    viewModel.selectMovieCategory(null)
+                }
+                viewModel.hideCategories(ids)
+            },
+        )
     }
 }
 
@@ -215,57 +317,139 @@ fun SeriesScreen(
 
     val hasContent = resume.isNotEmpty() || recentlyAdded.isNotEmpty() || genreRows.isNotEmpty()
 
-    Row(Modifier.fillMaxSize()) {
-        Column(
-            Modifier
-                .width(260.dp)
-                .fillMaxHeight()
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-        ) {
-            SearchAffordance(onOpenSearch)
-            if (browseCategory != null) {
-                SortAffordance(sortOption) {
+    val isPhone = LocalConfiguration.current.screenWidthDp < 600
+    var showCategoryDialog by remember { mutableStateOf(false) }
+    var phoneActionTarget by remember { mutableStateOf<VodActionTarget?>(null) }
+
+    if (isPhone) {
+        Column(Modifier.fillMaxSize()) {
+            VodPhoneTopBar(
+                onOpenSearch = onOpenSearch,
+                browseCategory = browseCategory,
+                sortOption = sortOption,
+                onNextSort = {
                     sortOption = SortOption.entries[(sortOption.ordinal + 1) % SortOption.entries.size]
-                }
-            }
-            if (sources.size > 1 && selectedSource == null) {
-                ProviderMenu(
-                    sources = sources,
-                    selected = selectedSource,
-                    onSelectAll = { browseCategory = null; viewModel.selectVodSource(null) },
-                    onSelectSource = { id -> browseCategory = null; viewModel.selectVodSource(id) },
-                )
-            }
-            CategoryMenu(
-                entries = categories.map { it.id to it.name },
-                selected = browseCategory,
+                },
+                onOpenAllCategories = { showCategoryDialog = true },
+            )
+
+            VodPhoneCategoryRow(
+                categories = categories.map { it.id to it.name },
+                selectedCategory = browseCategory,
                 onSelectHome = { browseCategory = null },
                 onSelectCategory = { id -> browseCategory = id; viewModel.selectSeriesCategory(id) },
+                onRequestAction = { phoneActionTarget = it },
             )
-        }
-        Box(Modifier.weight(1f).fillMaxHeight()) {
-            when {
-                browseCategory != null -> SeriesCategoryGrid(sortedSeries, onOpenSeries)
-                !hasContent -> when {
-                    vodLoading || isSyncing -> LoadingVod(stringResource(R.string.vod_loading_shows))
-                    hasSources -> EmptyVod(stringResource(R.string.vod_no_shows), stringResource(R.string.vod_no_shows_provider))
-                    else -> EmptyVod(stringResource(R.string.vod_no_shows), stringResource(R.string.vod_no_shows_add))
-                }
-                else -> LazyColumn(
-                    contentPadding = PaddingValues(vertical = 16.dp, horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
-                    modifier = Modifier.fillMaxSize(),
-                ) {
-                    if (resume.isNotEmpty()) item(key = "cw") { ContinueWatchingRow(resume, onResume) }
-                    if (recentlyAdded.isNotEmpty()) item(key = "recent") {
-                        SeriesPosterRow(stringResource(R.string.vod_recently_added), recentlyAdded, onOpenSeries)
+
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                when {
+                    browseCategory != null -> SeriesCategoryGrid(sortedSeries, onOpenSeries)
+                    !hasContent -> when {
+                        vodLoading || isSyncing -> LoadingVod(stringResource(R.string.vod_loading_shows))
+                        hasSources -> EmptyVod(stringResource(R.string.vod_no_shows), stringResource(R.string.vod_no_shows_provider))
+                        else -> EmptyVod(stringResource(R.string.vod_no_shows), stringResource(R.string.vod_no_shows_add))
                     }
-                    items(genreRows, key = { "g:${it.genre}" }) { group ->
-                        SeriesPosterRow(group.genre, group.items, onOpenSeries)
+                    else -> LazyColumn(
+                        contentPadding = PaddingValues(vertical = 12.dp, horizontal = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
+                        if (resume.isNotEmpty()) item(key = "cw") { ContinueWatchingRow(resume, onResume) }
+                        if (recentlyAdded.isNotEmpty()) item(key = "recent") {
+                            SeriesPosterRow(stringResource(R.string.vod_recently_added), recentlyAdded, onOpenSeries)
+                        }
+                        items(genreRows, key = { "g:${it.genre}" }) { group ->
+                            SeriesPosterRow(group.genre, group.items, onOpenSeries)
+                        }
                     }
                 }
             }
         }
+    } else {
+        Row(Modifier.fillMaxSize()) {
+            Column(
+                Modifier
+                    .width(260.dp)
+                    .fillMaxHeight()
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+            ) {
+                SearchAffordance(onOpenSearch)
+                if (browseCategory != null) {
+                    SortAffordance(sortOption) {
+                        sortOption = SortOption.entries[(sortOption.ordinal + 1) % SortOption.entries.size]
+                    }
+                }
+                if (sources.size > 1 && selectedSource == null) {
+                    ProviderMenu(
+                        sources = sources,
+                        selected = selectedSource,
+                        onSelectAll = { browseCategory = null; viewModel.selectVodSource(null) },
+                        onSelectSource = { id -> browseCategory = null; viewModel.selectVodSource(id) },
+                    )
+                }
+                CategoryMenu(
+                    entries = categories.map { it.id to it.name },
+                    selected = browseCategory,
+                    onSelectHome = { browseCategory = null },
+                    onSelectCategory = { id -> browseCategory = id; viewModel.selectSeriesCategory(id) },
+                    onHideCategories = { ids, _ ->
+                        if (browseCategory in ids) {
+                            browseCategory = null
+                            viewModel.selectSeriesCategory(null)
+                        }
+                        viewModel.hideCategories(ids)
+                    },
+                )
+            }
+            Box(Modifier.weight(1f).fillMaxHeight()) {
+                when {
+                    browseCategory != null -> SeriesCategoryGrid(sortedSeries, onOpenSeries)
+                    !hasContent -> when {
+                        vodLoading || isSyncing -> LoadingVod(stringResource(R.string.vod_loading_shows))
+                        hasSources -> EmptyVod(stringResource(R.string.vod_no_shows), stringResource(R.string.vod_no_shows_provider))
+                        else -> EmptyVod(stringResource(R.string.vod_no_shows), stringResource(R.string.vod_no_shows_add))
+                    }
+                    else -> LazyColumn(
+                        contentPadding = PaddingValues(vertical = 16.dp, horizontal = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
+                        if (resume.isNotEmpty()) item(key = "cw") { ContinueWatchingRow(resume, onResume) }
+                        if (recentlyAdded.isNotEmpty()) item(key = "recent") {
+                            SeriesPosterRow(stringResource(R.string.vod_recently_added), recentlyAdded, onOpenSeries)
+                        }
+                        items(genreRows, key = { "g:${it.genre}" }) { group ->
+                            SeriesPosterRow(group.genre, group.items, onOpenSeries)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showCategoryDialog) {
+        VodAllCategoriesDialog(
+            categories = categories.map { it.id to it.name },
+            selectedCategory = browseCategory,
+            onDismiss = { showCategoryDialog = false },
+            onSelectHome = { browseCategory = null },
+            onSelectCategory = { id -> browseCategory = id; viewModel.selectSeriesCategory(id) },
+            onRequestAction = { phoneActionTarget = it },
+        )
+    }
+
+    phoneActionTarget?.let { target ->
+        VodActionModal(
+            target = target,
+            onDismiss = { phoneActionTarget = null },
+            onHideCategories = { ids, _ ->
+                if (browseCategory in ids) {
+                    browseCategory = null
+                    viewModel.selectSeriesCategory(null)
+                }
+                viewModel.hideCategories(ids)
+            },
+        )
     }
 }
 
@@ -276,11 +460,13 @@ fun SeriesScreen(
 private fun MovieCategoryGrid(movies: List<Movie>, viewModel: VodViewModel, onOpenMovie: (Movie) -> Unit) {
     if (movies.isEmpty()) { LoadingVod(stringResource(R.string.vod_loading_movies)); return }
     val groups = remember(movies) { viewModel.collapseVariants(movies) }
+    val isPhone = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 600
+    val columns = if (isPhone) GridCells.Fixed(3) else GridCells.Adaptive(minSize = 140.dp)
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 140.dp),
-        contentPadding = PaddingValues(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        columns = columns,
+        contentPadding = PaddingValues(if (isPhone) 8.dp else 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(if (isPhone) 8.dp else 12.dp),
+        verticalArrangement = Arrangement.spacedBy(if (isPhone) 10.dp else 16.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
         gridItems(groups, key = { it.primary.id }) { group ->
@@ -298,6 +484,7 @@ private fun MovieCategoryGrid(movies: List<Movie>, viewModel: VodViewModel, onOp
                 rating = group.primary.rating,
                 qualityBadge = badge,
                 onClick = { onOpenMovie(group.primary) },
+                modifier = if (isPhone) Modifier.fillMaxWidth() else Modifier,
             )
         }
     }
@@ -307,11 +494,13 @@ private fun MovieCategoryGrid(movies: List<Movie>, viewModel: VodViewModel, onOp
 @Composable
 private fun SeriesCategoryGrid(series: List<Series>, onOpenSeries: (Series) -> Unit) {
     if (series.isEmpty()) { LoadingVod(stringResource(R.string.vod_loading_shows)); return }
+    val isPhone = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 600
+    val columns = if (isPhone) GridCells.Fixed(3) else GridCells.Adaptive(minSize = 140.dp)
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 140.dp),
-        contentPadding = PaddingValues(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        columns = columns,
+        contentPadding = PaddingValues(if (isPhone) 8.dp else 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(if (isPhone) 8.dp else 12.dp),
+        verticalArrangement = Arrangement.spacedBy(if (isPhone) 10.dp else 16.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
         gridItems(series, key = { it.id }) { item ->
@@ -321,6 +510,7 @@ private fun SeriesCategoryGrid(series: List<Series>, onOpenSeries: (Series) -> U
                 subtitle = item.year?.toString(),
                 rating = item.rating,
                 onClick = { onOpenSeries(item) },
+                modifier = if (isPhone) Modifier.fillMaxWidth() else Modifier,
             )
         }
     }
@@ -404,9 +594,9 @@ internal fun PosterCard(
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (focused) 1.06f else 1f, label = "posterScale")
+    val cardModifier = if (modifier == Modifier) Modifier.width(POSTER_WIDTH) else modifier
     Column(
-        modifier
-            .width(POSTER_WIDTH)
+        cardModifier
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .onFocusChanged { focused = it.isFocused }
             .clip(RoundedCornerShape(10.dp))
@@ -557,6 +747,13 @@ private fun ResumeCard(item: VodViewModel.ResumeItem, onClick: () -> Unit) {
 
 // ---- Category chips ----------------------------------------------------------------------------
 
+private data class VodActionTarget(
+    val title: String,
+    val subtitle: String,
+    val categoryIds: List<String>,
+    val onOpen: () -> Unit,
+)
+
 /**
  * A horizontal chip strip along the top of the home: an "All" chip returns to the curated rows, and
  * each following chip opens that category's full grid. Keeps whole-category browsing reachable on a
@@ -568,7 +765,9 @@ private fun CategoryMenu(
     selected: String?,
     onSelectHome: () -> Unit,
     onSelectCategory: (String) -> Unit,
+    onHideCategories: (List<String>, String) -> Unit = { _, _ -> },
 ) {
+    var actionDialogTarget by remember { mutableStateOf<VodActionTarget?>(null) }
     val grouped = remember(entries) {
         val groups = mutableMapOf<String, MutableList<Pair<String, String>>>()
         val singles = mutableListOf<Pair<String, String>>()
@@ -626,7 +825,18 @@ private fun CategoryMenu(
                 MenuItem(
                     label = if (isExpanded) "▼ $prefix" else "▶ $prefix",
                     selected = isAnyChildSelected && !isExpanded,
-                    onClick = { expanded[prefix] = !isExpanded }
+                    onClick = { expanded[prefix] = !isExpanded },
+                    onLongClick = {
+                        actionDialogTarget = VodActionTarget(
+                            title = prefix,
+                            subtitle = "Kategori Grubu (${list.size} kategori)",
+                            categoryIds = list.map { it.first },
+                            onOpen = {
+                                expanded[prefix] = true
+                                list.firstOrNull()?.first?.let { onSelectCategory(it) }
+                            },
+                        )
+                    },
                 )
             }
             if (isExpanded) {
@@ -634,7 +844,19 @@ private fun CategoryMenu(
                     Row {
                         Spacer(Modifier.width(16.dp))
                         Box(Modifier.weight(1f)) {
-                            MenuItem(name, selected == id) { onSelectCategory(id) }
+                            MenuItem(
+                                label = name,
+                                selected = selected == id,
+                                onClick = { onSelectCategory(id) },
+                                onLongClick = {
+                                    actionDialogTarget = VodActionTarget(
+                                        title = name,
+                                        subtitle = "$prefix / $name",
+                                        categoryIds = listOf(id),
+                                        onOpen = { onSelectCategory(id) },
+                                    )
+                                },
+                            )
                         }
                     }
                 }
@@ -642,9 +864,371 @@ private fun CategoryMenu(
         }
 
         items(singles, key = { it.first }) { (id, name) ->
-            MenuItem(name, selected == id) { onSelectCategory(id) }
+            MenuItem(
+                label = name,
+                selected = selected == id,
+                onClick = { onSelectCategory(id) },
+                onLongClick = {
+                    actionDialogTarget = VodActionTarget(
+                        title = name,
+                        subtitle = "Kategori",
+                        categoryIds = listOf(id),
+                        onOpen = { onSelectCategory(id) },
+                    )
+                },
+            )
         }
     }
+
+    // Modal dialog with 3 options: Aç, Gizle, İptal
+    actionDialogTarget?.let { target ->
+        VodActionModal(
+            target = target,
+            onDismiss = { actionDialogTarget = null },
+            onHideCategories = onHideCategories,
+        )
+    }
+}
+
+@Composable
+private fun VodActionModal(
+    target: VodActionTarget,
+    onDismiss: () -> Unit,
+    onHideCategories: (List<String>, String) -> Unit,
+) {
+    val context = LocalContext.current
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier
+                .width(420.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(20.dp),
+        ) {
+            Text(
+                text = target.title,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = target.subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(18.dp))
+
+            // Seçenek 1: Aç
+            VodActionRow("▶ Aç", primary = true) {
+                target.onOpen()
+                onDismiss()
+            }
+
+            // Seçenek 2: Gizle
+            VodActionRow("👁️ Gizle") {
+                onHideCategories(target.categoryIds, target.title)
+                Toast.makeText(context, "${target.title} gizlendi", Toast.LENGTH_SHORT).show()
+                onDismiss()
+            }
+
+            // Seçenek 3: İptal
+            VodActionRow("İptal") {
+                onDismiss()
+            }
+        }
+    }
+}
+
+@Composable
+private fun VodPhoneTopBar(
+    onOpenSearch: () -> Unit,
+    browseCategory: String?,
+    sortOption: SortOption,
+    onNextSort: () -> Unit,
+    onOpenAllCategories: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        // Arama Butonu (Hap şeklinde)
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(20.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                .clickable(onClick = onOpenSearch)
+                .padding(horizontal = 12.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Filled.Search,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                stringResource(R.string.vod_search_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+
+        // Sıralama Butonu (kategori seçiliyse)
+        if (browseCategory != null) {
+            val sortLabel = when (sortOption) {
+                SortOption.RATING -> "★ Puan"
+                SortOption.YEAR -> "📅 Yıl"
+                SortOption.NAME -> "A-Z"
+                SortOption.DEFAULT -> "⇅ Sırala"
+            }
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f))
+                    .clickable(onClick = onNextSort)
+                    .padding(horizontal = 12.dp, vertical = 9.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    sortLabel,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            }
+        }
+
+        // Tüm Kategoriler Butonu
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(20.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f))
+                .clickable(onClick = onOpenAllCategories)
+                .padding(horizontal = 12.dp, vertical = 9.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                "📁 Kategoriler",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun VodPhoneCategoryRow(
+    categories: List<Pair<String, String>>,
+    selectedCategory: String?,
+    onSelectHome: () -> Unit,
+    onSelectCategory: (String) -> Unit,
+    onRequestAction: (VodActionTarget) -> Unit,
+) {
+    LazyRow(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        // Tümü Chip
+        item(key = "phone_all") {
+            val isSelected = selectedCategory == null
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(
+                        if (isSelected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    )
+                    .clickable(onClick = onSelectHome)
+                    .padding(horizontal = 14.dp, vertical = 7.dp),
+            ) {
+                Text(
+                    text = "⭐ " + stringResource(R.string.vod_all),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        items(categories, key = { "phone_${it.first}" }) { (id, name) ->
+            val isSelected = selectedCategory == id
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(
+                        if (isSelected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    )
+                    .combinedClickable(
+                        onClick = { onSelectCategory(id) },
+                        onLongClick = {
+                            onRequestAction(
+                                VodActionTarget(
+                                    title = name,
+                                    subtitle = "Kategori",
+                                    categoryIds = listOf(id),
+                                    onOpen = { onSelectCategory(id) },
+                                )
+                            )
+                        },
+                    )
+                    .padding(horizontal = 14.dp, vertical = 7.dp),
+            ) {
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun VodAllCategoriesDialog(
+    categories: List<Pair<String, String>>,
+    selectedCategory: String?,
+    onDismiss: () -> Unit,
+    onSelectHome: () -> Unit,
+    onSelectCategory: (String) -> Unit,
+    onRequestAction: (VodActionTarget) -> Unit,
+) {
+    var searchQuery by remember { mutableStateOf("") }
+    val filtered = remember(categories, searchQuery) {
+        if (searchQuery.isBlank()) categories
+        else categories.filter { it.second.contains(searchQuery, ignoreCase = true) }
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 520.dp)
+                .clip(RoundedCornerShape(18.dp))
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(16.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    text = "📁 " + stringResource(R.string.vod_categories),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = "Kapat",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text("Kategori ara...", fontSize = 14.sp) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+            )
+
+            Spacer(Modifier.height(10.dp))
+
+            LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                if (searchQuery.isBlank()) {
+                    item(key = "dlg_all") {
+                        MenuItem(
+                            label = "⭐ " + stringResource(R.string.vod_all),
+                            selected = selectedCategory == null,
+                            onClick = {
+                                onSelectHome()
+                                onDismiss()
+                            },
+                        )
+                    }
+                }
+
+                items(filtered, key = { "dlg_${it.first}" }) { (id, name) ->
+                    MenuItem(
+                        label = name,
+                        selected = selectedCategory == id,
+                        onClick = {
+                            onSelectCategory(id)
+                            onDismiss()
+                        },
+                        onLongClick = {
+                            onRequestAction(
+                                VodActionTarget(
+                                    title = name,
+                                    subtitle = "Kategori",
+                                    categoryIds = listOf(id),
+                                    onOpen = {
+                                        onSelectCategory(id)
+                                        onDismiss()
+                                    },
+                                )
+                            )
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun VodActionRow(label: String, primary: Boolean = false, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val bg = when {
+        focused -> MaterialTheme.colorScheme.primary
+        primary -> MaterialTheme.colorScheme.primaryContainer
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
+    val fg = when {
+        focused -> MaterialTheme.colorScheme.onPrimary
+        primary -> MaterialTheme.colorScheme.onPrimaryContainer
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    Text(
+        text = label,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = if (primary) FontWeight.SemiBold else FontWeight.Normal,
+        color = fg,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp)
+            .onFocusChanged { focused = it.isFocused }
+            .clip(RoundedCornerShape(10.dp))
+            .background(bg)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+    )
 }
 
 @Composable
@@ -663,13 +1247,19 @@ private fun ProviderMenu(
         )
         MenuItem(stringResource(R.string.channels_manager_all_sources), selected == null, onSelectAll)
         sources.forEach { source ->
-            MenuItem(source.name, selected == source.id) { onSelectSource(source.id) }
+            MenuItem(source.name, selected == source.id, onClick = { onSelectSource(source.id) })
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MenuItem(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun MenuItem(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+) {
     var focused by remember { mutableStateOf(false) }
     val bg = when {
         focused -> MaterialTheme.colorScheme.primary
@@ -693,7 +1283,21 @@ private fun MenuItem(label: String, selected: Boolean, onClick: () -> Unit) {
             .onFocusChanged { focused = it.isFocused }
             .clip(RoundedCornerShape(8.dp))
             .background(bg)
-            .clickable(onClick = onClick)
+            .onPreviewKeyEvent { e ->
+                if (e.type == KeyEventType.KeyDown &&
+                    (e.key == Key.DirectionCenter || e.key == Key.Enter) &&
+                    (e.nativeKeyEvent.isLongPress || e.nativeKeyEvent.repeatCount == 1)
+                ) {
+                    if (onLongClick != null) {
+                        onLongClick()
+                        true
+                    } else false
+                } else false
+            }
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick,
+            )
             .padding(horizontal = 16.dp, vertical = 12.dp),
     )
 }

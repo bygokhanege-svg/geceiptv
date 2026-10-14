@@ -974,15 +974,28 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
         combine(
             graph.catalogRepository.observeCategories(StreamKind.MOVIE),
             selectedVodSource,
-        ) { raw, sourceId -> if (sourceId == null) raw else raw.filter { it.sourceId == sourceId } }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+            settings.hiddenCategories,
+            settings.hiddenUnlocked,
+        ) { raw, sourceId, hidden, unlocked ->
+            val scoped = if (sourceId == null) raw else raw.filter { it.sourceId == sourceId }
+            if (unlocked) scoped else scoped.filter { it.id !in hidden && it.name !in hidden }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val seriesCategories: StateFlow<List<Category>> =
         combine(
             graph.catalogRepository.observeCategories(StreamKind.SERIES),
             selectedVodSource,
-        ) { raw, sourceId -> if (sourceId == null) raw else raw.filter { it.sourceId == sourceId } }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+            settings.hiddenCategories,
+            settings.hiddenUnlocked,
+        ) { raw, sourceId, hidden, unlocked ->
+            val scoped = if (sourceId == null) raw else raw.filter { it.sourceId == sourceId }
+            if (unlocked) scoped else scoped.filter { it.id !in hidden && it.name !in hidden }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun hideCategories(categoryIds: List<String>) {
+        val current = settings.hiddenCategories.value
+        settings.setHiddenCategories(current + categoryIds)
+    }
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val movies: StateFlow<List<Movie>> = combine(movieCategory, selectedVodSource) { cat, src -> cat to src }

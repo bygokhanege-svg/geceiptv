@@ -22,6 +22,13 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -140,7 +147,7 @@ fun HomeScreen(
     val channelsPresent by viewModel.channelsPresent.collectAsState()
     val availableCountries by viewModel.availableCountries.collectAsState()
     val selectedCountry by viewModel.selectedCountry.collectAsState()
-    var channelToHide by remember { mutableStateOf<ChannelsViewModel.Row?>(null) }
+    var categoryGroupToManage by remember { mutableStateOf<ChannelsViewModel.CategoryGroup?>(null) }
 
     // Two separate ideas, on purpose:
     //  - highlightedRow: where the d-pad is in the grid. Moves freely with up/down.
@@ -320,6 +327,7 @@ fun HomeScreen(
             onPlayChannel = { channel -> requestLive(channel) },
             onOpenChannelMenu = { row -> channelMenu = row },
             onToggleFavourite = { row -> viewModel.toggleFavourite(row) },
+            onLongSelectCategory = { group -> categoryGroupToManage = group },
             onRefresh = onRefresh,
             onAddSource = onAddSource,
         )
@@ -424,6 +432,7 @@ fun HomeScreen(
                             label = group.label,
                             selected = groupSelected,
                             onClick = { viewModel.selectCategory(group.key) },
+                            onLongClick = { categoryGroupToManage = group },
                             modifier = if (groupSelected) Modifier.focusRequester(railFocusRequester) else Modifier,
                         )
                     }
@@ -500,7 +509,7 @@ fun HomeScreen(
                             rows = rows,
                             selectedKey = highlightedRow?.key,
                             onSelectRow = { row -> channelMenu = row },
-                            onLongSelectRow = { row -> channelToHide = row },
+                            onLongSelectRow = {},
                             onFocusRow = onFocusChannel,
                             onToggleFavourite = { viewModel.toggleFavourite(it) },
                             onExitLeftFromChannel = onExitLeftChannel,
@@ -877,9 +886,9 @@ fun HomeScreen(
         }
     }
 
-    // Long press OK confirm dialog to hide channel
-    channelToHide?.let { rowToHide ->
-        Dialog(onDismissRequest = { channelToHide = null }) {
+    // Long press OK confirm dialog offering 3 options on category group: Aç, Gizle, İptal
+    categoryGroupToManage?.let { group ->
+        Dialog(onDismissRequest = { categoryGroupToManage = null }) {
             Column(
                 Modifier
                     .width(420.dp)
@@ -888,26 +897,40 @@ fun HomeScreen(
                     .padding(20.dp),
             ) {
                 Text(
-                    "Kanalı Listede Gizle",
+                    text = group.label,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(4.dp))
                 Text(
-                    "\"${rowToHide.primary.shownName}\" kanalını listeden gizlemek istiyor musunuz?",
+                    text = "Kategori Grubu Seçenekleri",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(18.dp))
-                RecordActionRow("👁️ Bu Kanalı Gizle", primary = true) {
-                    recordScope.launch {
-                        rowToHide.variants.forEach { v -> graph.catalogRepository.setChannelHidden(v.id, true) }
-                    }
-                    Toast.makeText(context, "${rowToHide.primary.shownName} listeden gizlendi", Toast.LENGTH_SHORT).show()
-                    channelToHide = null
+
+                // Seçenek 1: Aç
+                RecordActionRow("▶ Aç", primary = true) {
+                    viewModel.selectCategory(group.key)
+                    categoryGroupToManage = null
                 }
+
+                // Seçenek 2: Gizle
+                RecordActionRow("👁️ Gizle") {
+                    if (selectedCategory == group.key) {
+                        viewModel.selectCategory(null)
+                    }
+                    viewModel.setGroupHidden(group, true)
+                    Toast.makeText(context, "${group.label} grubu gizlendi", Toast.LENGTH_SHORT).show()
+                    categoryGroupToManage = null
+                }
+
+                // Seçenek 3: İptal
                 RecordActionRow("İptal") {
-                    channelToHide = null
+                    categoryGroupToManage = null
                 }
             }
         }
@@ -1005,24 +1028,53 @@ private fun QualityChip(label: String, selected: Boolean, onClick: () -> Unit) {
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun RailEntry(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun RailEntry(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val bg = when {
+        focused -> MaterialTheme.colorScheme.primary
+        selected -> MaterialTheme.colorScheme.primaryContainer
+        else -> MaterialTheme.colorScheme.surface
+    }
+    val fg = when {
+        focused -> MaterialTheme.colorScheme.onPrimary
+        selected -> MaterialTheme.colorScheme.onPrimaryContainer
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
     Text(
         text = label,
         style = MaterialTheme.typography.titleMedium,
         fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-        color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
-        else MaterialTheme.colorScheme.onSurfaceVariant,
+        color = fg,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
-            .background(
-                if (selected) MaterialTheme.colorScheme.primaryContainer
-                else MaterialTheme.colorScheme.surface,
+            .background(bg)
+            .onFocusChanged { focused = it.isFocused }
+            .onPreviewKeyEvent { e ->
+                if (e.type == KeyEventType.KeyDown &&
+                    (e.key == Key.DirectionCenter || e.key == Key.Enter) &&
+                    (e.nativeKeyEvent.isLongPress || e.nativeKeyEvent.repeatCount == 1)
+                ) {
+                    if (onLongClick != null) {
+                        onLongClick()
+                        true
+                    } else false
+                } else false
+            }
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick,
             )
-            .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
     )
 }
@@ -1248,6 +1300,7 @@ private fun PhoneHomeScreen(
     onPlayChannel: (Channel) -> Unit,
     onOpenChannelMenu: (ChannelsViewModel.Row) -> Unit,
     onToggleFavourite: (ChannelsViewModel.Row) -> Unit,
+    onLongSelectCategory: (ChannelsViewModel.CategoryGroup) -> Unit = {},
     onRefresh: () -> Unit,
     onAddSource: () -> Unit,
 ) {
@@ -1294,6 +1347,7 @@ private fun PhoneHomeScreen(
                     label = group.label,
                     isSelected = groupSelected,
                     onClick = { onSelectCategory(group.key) },
+                    onLongClick = { onLongSelectCategory(group) },
                 )
             }
         }
@@ -1363,11 +1417,13 @@ private fun PhoneHomeScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PhoneCategoryChip(
     label: String,
     isSelected: Boolean,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
 ) {
     val bg = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
     val fg = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
@@ -1381,7 +1437,10 @@ private fun PhoneCategoryChip(
                 if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
                 RoundedCornerShape(20.dp),
             )
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick,
+            )
             .padding(horizontal = 14.dp, vertical = 7.dp),
         contentAlignment = Alignment.Center,
     ) {

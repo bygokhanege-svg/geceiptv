@@ -60,9 +60,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -103,14 +105,23 @@ fun AppSettingsScreen(onBack: () -> Unit) {
         Toast.makeText(context, refreshingMessage, Toast.LENGTH_SHORT).show()
     }
 
+    val isPhone = LocalConfiguration.current.screenWidthDp < 600
+
     Column(
         Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 32.dp, vertical = 24.dp),
+            .padding(horizontal = if (isPhone) 16.dp else 32.dp, vertical = if (isPhone) 16.dp else 24.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(R.string.settings_display_title), style = MaterialTheme.typography.headlineMedium)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(
+                stringResource(R.string.settings_display_title),
+                style = if (isPhone) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+            )
             Spacer(Modifier.weight(1f))
             OutlinedButton(onClick = onBack) { Text(stringResource(R.string.common_done)) }
         }
@@ -469,67 +480,143 @@ private fun DeviceOptimizerSection(settings: AppSettings) {
         Spacer(Modifier.height(8.dp))
 
         // Device Specs Summary Card
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
-                .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
-                .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            Box(
+        val isPhone = LocalConfiguration.current.screenWidthDp < 600
+        if (isPhone) {
+            Column(
                 modifier = Modifier
-                    .size(46.dp)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
-                    .border(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f), RoundedCornerShape(12.dp)),
-                contentAlignment = Alignment.Center,
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+                    .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Icon(
-                    imageVector = Icons.Filled.Tv,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp),
-                )
-            }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), RoundedCornerShape(10.dp))
+                                .border(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f), RoundedCornerShape(10.dp)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Tv,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            text = "${hardwareInfo.brand} ${hardwareInfo.model}",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
 
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = "${hardwareInfo.brand} ${hardwareInfo.model}",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
+                    // Current Active Badge
+                    Box(
+                        modifier = Modifier
+                            .background(
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                RoundedCornerShape(8.dp)
+                            )
+                            .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Icon(
+                                Icons.Filled.Bolt,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(14.dp),
+                            )
+                            Text(
+                                stringResource(activeProfile.titleRes),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                }
+
                 Text(
                     text = "${hardwareInfo.socOrHardware} (${hardwareInfo.cpuCores} ${stringResource(R.string.settings_device_hw_cpu)}) • RAM: ${hardwareInfo.formattedRam}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-
-            // Current Active Badge
-            Box(
+        } else {
+            Row(
                 modifier = Modifier
-                    .background(
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                        RoundedCornerShape(8.dp)
-                    )
-                    .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+                    .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Box(
+                    modifier = Modifier
+                        .size(46.dp)
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
+                        .border(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f), RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
                     Icon(
-                        Icons.Filled.Bolt,
+                        imageVector = Icons.Filled.Tv,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(16.dp),
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = "${hardwareInfo.brand} ${hardwareInfo.model}",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        stringResource(activeProfile.titleRes),
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
+                        text = "${hardwareInfo.socOrHardware} (${hardwareInfo.cpuCores} ${stringResource(R.string.settings_device_hw_cpu)}) • RAM: ${hardwareInfo.formattedRam}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+
+                // Current Active Badge
+                Box(
+                    modifier = Modifier
+                        .background(
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                            RoundedCornerShape(8.dp)
+                        )
+                        .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Icon(
+                            Icons.Filled.Bolt,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Text(
+                            stringResource(activeProfile.titleRes),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
                 }
             }
         }
@@ -740,6 +827,8 @@ private fun DeviceOptimizationDialog(
         isScanning = false
     }
 
+    val isPhone = LocalConfiguration.current.screenWidthDp < 600
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -748,7 +837,7 @@ private fun DeviceOptimizationDialog(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.75f))
-                .padding(24.dp),
+                .padding(if (isPhone) 12.dp else 24.dp),
             contentAlignment = Alignment.Center,
         ) {
             Card(
@@ -760,7 +849,9 @@ private fun DeviceOptimizationDialog(
                 border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)),
             ) {
                 Column(
-                    modifier = Modifier.padding(24.dp),
+                    modifier = Modifier
+                        .verticalScroll(rememberScrollState())
+                        .padding(if (isPhone) 16.dp else 24.dp),
                     horizontalAlignment = Alignment.Start,
                 ) {
                     if (isScanning) {
@@ -860,29 +951,52 @@ private fun DeviceOptimizationDialog(
                                 .padding(12.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Row(Modifier.fillMaxWidth()) {
+                            if (isPhone) {
                                 DialogSpecItem(
                                     label = stringResource(R.string.settings_device_hw_brand_model),
                                     value = "${hardwareInfo.brand} ${hardwareInfo.model}",
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier.fillMaxWidth(),
                                 )
                                 DialogSpecItem(
                                     label = stringResource(R.string.settings_device_hw_ram),
                                     value = "${hardwareInfo.formattedRam} (${hardwareInfo.availableRamMb} MB boş)",
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier.fillMaxWidth(),
                                 )
-                            }
-                            Row(Modifier.fillMaxWidth()) {
                                 DialogSpecItem(
                                     label = stringResource(R.string.settings_device_hw_cpu),
                                     value = "${hardwareInfo.socOrHardware} (${hardwareInfo.cpuCores} Çekirdek)",
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier.fillMaxWidth(),
                                 )
                                 DialogSpecItem(
                                     label = stringResource(R.string.settings_device_hw_codec),
                                     value = if (hardwareInfo.hasHardwareHevc) "HEVC / 4K Donanım Aktif" else "Standart Çözücü",
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier.fillMaxWidth(),
                                 )
+                            } else {
+                                Row(Modifier.fillMaxWidth()) {
+                                    DialogSpecItem(
+                                        label = stringResource(R.string.settings_device_hw_brand_model),
+                                        value = "${hardwareInfo.brand} ${hardwareInfo.model}",
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    DialogSpecItem(
+                                        label = stringResource(R.string.settings_device_hw_ram),
+                                        value = "${hardwareInfo.formattedRam} (${hardwareInfo.availableRamMb} MB boş)",
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                }
+                                Row(Modifier.fillMaxWidth()) {
+                                    DialogSpecItem(
+                                        label = stringResource(R.string.settings_device_hw_cpu),
+                                        value = "${hardwareInfo.socOrHardware} (${hardwareInfo.cpuCores} Çekirdek)",
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    DialogSpecItem(
+                                        label = stringResource(R.string.settings_device_hw_codec),
+                                        value = if (hardwareInfo.hasHardwareHevc) "HEVC / 4K Donanım Aktif" else "Standart Çözücü",
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                }
                             }
                         }
 

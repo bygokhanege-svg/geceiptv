@@ -65,6 +65,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -125,10 +126,11 @@ fun DeviceLicenseScreen(
                 ),
             ),
     ) {
+        val isPhone = LocalConfiguration.current.screenWidthDp < 600
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp),
+                .padding(if (isPhone) 16.dp else 24.dp),
         ) {
             // Header
             Row(
@@ -219,22 +221,36 @@ fun DeviceLicenseScreen(
                 }
             }
 
-            // Main Content: 2-Column Split
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(20.dp),
-            ) {
-                // Left Column: Device IDs, Status & Code Input
+            val submitCodeAction = {
+                val trimmed = inputCode.trim()
+                if (trimmed.equals("egesmart2026", ignoreCase = true)) {
+                    inputCode = ""
+                    codeError = null
+                    codeSuccess = false
+                    onOpenAdminPanel()
+                } else {
+                    val ok = licenseManager.activateWithCode(inputCode)
+                    if (ok) {
+                        codeSuccess = true
+                        codeError = null
+                        inputCode = ""
+                    } else {
+                        codeSuccess = false
+                        codeError = context.getString(R.string.license_code_invalid)
+                    }
+                }
+            }
+
+            if (isPhone) {
+                // Phone Layout: Single vertical scrolling column with full-width cards
                 Column(
-                    modifier = Modifier.weight(1.15f),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    // License Status Banner Card
                     LicenseStatusCard(licenseStatus)
 
-                    // Device Credentials Card
                     DeviceCredentialsCard(
                         mac = mac,
                         key = key,
@@ -248,260 +264,291 @@ fun DeviceLicenseScreen(
                         },
                     )
 
-                    // License Code Input Card
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
-                        border = androidx.compose.foundation.BorderStroke(
-                            1.dp,
-                            MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
-                        ),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Column(modifier = Modifier.padding(18.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Filled.Key,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp),
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = stringResource(R.string.license_code_input_title),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            ) {
-                                OutlinedTextField(
-                                    value = inputCode,
-                                    onValueChange = {
-                                        inputCode = it.uppercase()
-                                        codeError = null
-                                        codeSuccess = false
-                                    },
-                                    placeholder = {
-                                        Text(
-                                            stringResource(R.string.license_code_hint),
-                                            fontSize = 13.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                        )
-                                    },
-                                    singleLine = true,
-                                    modifier = Modifier.weight(1f),
-                                    textStyle = MaterialTheme.typography.bodyMedium.copy(
-                                        fontFamily = FontFamily.Monospace,
-                                        fontWeight = FontWeight.Bold,
-                                    ),
-                                    keyboardOptions = KeyboardOptions(
-                                        capitalization = KeyboardCapitalization.Characters,
-                                        imeAction = ImeAction.Done,
-                                    ),
-                                    keyboardActions = KeyboardActions(
-                                        onDone = {
-                                            val trimmed = inputCode.trim()
-                                            if (trimmed.equals("egesmart2026", ignoreCase = true)) {
-                                                inputCode = ""
-                                                codeError = null
-                                                codeSuccess = false
-                                                onOpenAdminPanel()
-                                                return@KeyboardActions
-                                            }
-                                            val ok = licenseManager.activateWithCode(inputCode)
-                                            if (ok) {
-                                                codeSuccess = true
-                                                codeError = null
-                                                inputCode = ""
-                                            } else {
-                                                codeSuccess = false
-                                                codeError = context.getString(R.string.license_code_invalid)
-                                            }
-                                        },
-                                    ),
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
-                                    ),
-                                )
+                    LicenseCodeInputCard(
+                        inputCode = inputCode,
+                        onInputCodeChange = {
+                            inputCode = it.uppercase()
+                            codeError = null
+                            codeSuccess = false
+                        },
+                        codeSuccess = codeSuccess,
+                        codeError = codeError,
+                        onSubmit = submitCodeAction,
+                    )
 
-                                Button(
-                                    onClick = {
-                                        val trimmed = inputCode.trim()
-                                        if (trimmed.equals("egesmart2026", ignoreCase = true)) {
-                                            inputCode = ""
-                                            codeError = null
-                                            codeSuccess = false
-                                            onOpenAdminPanel()
-                                            return@Button
-                                        }
-                                        val ok = licenseManager.activateWithCode(inputCode)
-                                        if (ok) {
-                                            codeSuccess = true
-                                            codeError = null
-                                            inputCode = ""
-                                        } else {
-                                            codeSuccess = false
-                                            codeError = context.getString(R.string.license_code_invalid)
-                                        }
-                                    },
-                                    shape = RoundedCornerShape(10.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = MaterialTheme.colorScheme.primary,
-                                    ),
-                                    modifier = Modifier.height(52.dp),
-                                ) {
-                                    Text(
-                                        text = stringResource(R.string.license_code_submit),
-                                        fontWeight = FontWeight.Bold,
-                                    )
-                                }
-                            }
+                    WebActivationCard(qrBitmap = qrBitmap)
 
-                            if (codeSuccess) {
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(
-                                    text = stringResource(R.string.license_code_success),
-                                    color = Color(0xFF22C55E),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Medium,
-                                )
-                            }
-                            if (codeError != null) {
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(
-                                    text = codeError ?: "",
-                                    color = MaterialTheme.colorScheme.error,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Medium,
-                                )
-                            }
-                        }
-                    }
+                    SupportContactCard()
+
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
-
-                // Right Column: Web & QR Code Activation
-                Column(
-                    modifier = Modifier.weight(0.85f),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
+            } else {
+                // TV / Large Tablet Layout: 2-Column Split
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(20.dp),
                 ) {
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
-                        border = androidx.compose.foundation.BorderStroke(
-                            1.dp,
-                            MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
-                        ),
-                        modifier = Modifier.fillMaxWidth(),
+                    Column(
+                        modifier = Modifier.weight(1.15f),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
-                        Column(
-                            modifier = Modifier.padding(20.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.QrCode2,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(24.dp),
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = stringResource(R.string.license_web_activation_title),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = stringResource(R.string.license_web_activation_desc),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                            Spacer(modifier = Modifier.height(14.dp))
+                        LicenseStatusCard(licenseStatus)
 
-                            // QR Image Box
-                            Box(
-                                modifier = Modifier
-                                    .size(200.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(Color.White)
-                                    .padding(8.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                if (qrBitmap != null) {
-                                    Image(
-                                        bitmap = qrBitmap.asImageBitmap(),
-                                        contentDescription = "QR Code",
-                                        modifier = Modifier.fillMaxSize(),
-                                    )
-                                }
-                            }
+                        DeviceCredentialsCard(
+                            mac = mac,
+                            key = key,
+                            onCopyMac = {
+                                clipboard.setText(AnnotatedString(mac))
+                                Toast.makeText(context, context.getString(R.string.license_copied), Toast.LENGTH_SHORT).show()
+                            },
+                            onCopyKey = {
+                                clipboard.setText(AnnotatedString(key))
+                                Toast.makeText(context, context.getString(R.string.license_copied), Toast.LENGTH_SHORT).show()
+                            },
+                        )
 
-                            Spacer(modifier = Modifier.height(14.dp))
-                            Text(
-                                text = "gecetv.app/activate",
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = "Kamera ile okutarak telefonunuzdan anında liste yükleyin veya lisansınızı yenileyin.",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 11.sp,
-                            )
-                        }
+                        LicenseCodeInputCard(
+                            inputCode = inputCode,
+                            onInputCodeChange = {
+                                inputCode = it.uppercase()
+                                codeError = null
+                                codeSuccess = false
+                            },
+                            codeSuccess = codeSuccess,
+                            codeError = codeError,
+                            onSubmit = submitCodeAction,
+                        )
                     }
 
-                    // Direct Contact & Support Card
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
-                        border = androidx.compose.foundation.BorderStroke(
-                            1.dp,
-                            MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
-                        ),
-                        modifier = Modifier.fillMaxWidth(),
+                    Column(
+                        modifier = Modifier.weight(0.85f),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text(
-                                text = "PREMİUM AKTİVASYON & DESTEK",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontSize = 11.sp,
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "✉️ E-posta: ",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
-                                Text(
-                                    text = "geceiptv@gmail.com",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
-                            }
-                        }
+                        WebActivationCard(qrBitmap = qrBitmap)
+                        SupportContactCard()
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LicenseCodeInputCard(
+    inputCode: String,
+    onInputCodeChange: (String) -> Unit,
+    codeSuccess: Boolean,
+    codeError: String?,
+    onSubmit: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(18.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Filled.Key,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = stringResource(R.string.license_code_input_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                OutlinedTextField(
+                    value = inputCode,
+                    onValueChange = onInputCodeChange,
+                    placeholder = {
+                        Text(
+                            stringResource(R.string.license_code_hint),
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        )
+                    },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Characters,
+                        imeAction = ImeAction.Done,
+                    ),
+                    keyboardActions = KeyboardActions(onDone = { onSubmit() }),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                    ),
+                )
+
+                Button(
+                    onClick = onSubmit,
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                    ),
+                    modifier = Modifier.height(52.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.license_code_submit),
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+
+            if (codeSuccess) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = stringResource(R.string.license_code_success),
+                    color = Color(0xFF22C55E),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+            if (codeError != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = codeError,
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun WebActivationCard(qrBitmap: android.graphics.Bitmap?) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.QrCode2,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = stringResource(R.string.license_web_activation_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.license_web_activation_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // QR Image Box
+            Box(
+                modifier = Modifier
+                    .size(200.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color.White)
+                    .padding(8.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (qrBitmap != null) {
+                    Image(
+                        bitmap = qrBitmap.asImageBitmap(),
+                        contentDescription = "QR Code",
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+            Text(
+                text = "gecetv.app/activate",
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "Kamera ile okutarak telefonunuzdan anında liste yükleyin veya lisansınızı yenileyin.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 11.sp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SupportContactCard() {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "PREMİUM AKTİVASYON & DESTEK",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+                fontSize = 11.sp,
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "✉️ E-posta: ",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    text = "geceiptv@gmail.com",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
             }
         }
     }

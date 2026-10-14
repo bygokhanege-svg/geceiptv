@@ -119,14 +119,18 @@ fun SettingsHubScreen(
     val screenWidthDp = configuration.screenWidthDp
     val isWideScreen = screenWidthDp >= 600
 
-    // Grid columns: 3 columns for mobile & tablet (as requested), 5 columns for TV
-    val columns = if (isTv) 5 else 3
+    // Grid columns: 2 columns for portrait phones (prevents text clipping), 3 for tablets, 5 for TV
+    val columns = when {
+        isTv -> 5
+        isWideScreen -> 3
+        else -> 2
+    }
 
-    // Card aspect ratio: 1f for TV, 1.15f for tablets/landscape, 0.88f for portrait phones
+    // Card aspect ratio: 1f for TV, 1.15f for tablets/phones
     val tileAspectRatio = when {
         isTv -> 1f
         isWideScreen -> 1.15f
-        else -> 0.88f
+        else -> 1.15f
     }
 
     val entries = listOf(
@@ -619,22 +623,22 @@ private fun HubTile(
                 text = entry.title,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
-                fontSize = if (isWideScreen) 14.sp else 12.sp,
+                fontSize = if (isWideScreen) 14.sp else 13.sp,
                 color = if (focused || isPressed) Color.White else MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center,
-                maxLines = 1,
+                maxLines = if (isWideScreen) 1 else 2,
                 overflow = TextOverflow.Ellipsis,
             )
 
-            Spacer(Modifier.height(2.dp))
+            Spacer(Modifier.height(3.dp))
 
             // Subtitle
             Text(
                 text = entry.subtitle,
                 style = MaterialTheme.typography.bodySmall,
-                fontSize = if (isWideScreen) 11.sp else 9.5.sp,
-                lineHeight = if (isWideScreen) 14.sp else 12.sp,
-                color = if (focused || isPressed) Color.White.copy(alpha = 0.90f) else Color.White.copy(alpha = 0.55f),
+                fontSize = if (isWideScreen) 11.sp else 10.sp,
+                lineHeight = if (isWideScreen) 14.sp else 13.sp,
+                color = if (focused || isPressed) Color.White.copy(alpha = 0.90f) else Color.White.copy(alpha = 0.65f),
                 textAlign = TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,

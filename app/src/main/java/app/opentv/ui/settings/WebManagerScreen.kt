@@ -40,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -62,12 +63,18 @@ fun WebManagerScreen(
     viewModel: WebManagerViewModel = viewModel(),
 ) {
     val state by viewModel.state.collectAsState()
+    val isPhone = LocalConfiguration.current.screenWidthDp < 600
 
     LaunchedEffect(Unit) {
         viewModel.start()
     }
 
-    Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .padding(if (isPhone) 16.dp else 24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
         when (val current = state) {
             is ManagerServer.State.Listening -> Listening(current.session, onBack)
 
@@ -100,71 +107,14 @@ fun WebManagerScreen(
 private fun Listening(session: ManagerServer.Session, onBack: () -> Unit) {
     // Generated once per session — encoding is not free and the content does not change.
     val qr = remember(session.url) { QrCodes.render(session.url, QR_SIZE_PX) }
+    val isPhone = LocalConfiguration.current.screenWidthDp < 600
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(40.dp, Alignment.CenterHorizontally),
-    ) {
-        // Left Column: QR Card & Link
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.widthIn(max = 300.dp),
-        ) {
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(Color.White)
-                    .border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), RoundedCornerShape(20.dp))
-                    .padding(12.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (qr != null) {
-                    Image(
-                        bitmap = qr.asImageBitmap(),
-                        contentDescription = stringResource(R.string.webmanager_qr_desc),
-                        modifier = Modifier.size(240.dp),
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(12.dp))
-
-            Surface(
-                shape = RoundedCornerShape(999.dp),
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "📸 Telefon Kamerasını Doğrultun",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            Text(
-                session.url,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
-        }
-
-        // Right Column: Title, Instructions, Features, Buttons
+    if (isPhone) {
         Column(
             modifier = Modifier
-                .widthIn(max = 580.dp)
+                .fillMaxWidth()
                 .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             // Live Status Indicator Pill
             Row(
@@ -190,21 +140,72 @@ private fun Listening(session: ManagerServer.Session, onBack: () -> Unit) {
                 )
             }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(10.dp))
 
             Text(
                 "Telefon Bağlantısı & Akıllı Kumanda",
-                style = MaterialTheme.typography.headlineMedium,
+                style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
+                textAlign = TextAlign.Center,
             )
 
             Spacer(Modifier.height(6.dp))
 
             Text(
-                "Telefonunuzu anında kumandaya dönüştürün. Uygulama indirmenize gerek yoktur; açılan web panelinden TV'yi yönetebilir, kanalları açabilir veya IPTV listesi ekleyebilirsiniz.",
-                style = MaterialTheme.typography.bodyMedium,
+                "Telefonunuzu anında kumandaya dönüştürün. Açılan web panelinden TV'yi yönetebilir, kanalları açabilir veya IPTV listesi ekleyebilirsiniz.",
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+
+            Spacer(Modifier.height(16.dp))
+
+            // QR Code Box
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color.White)
+                    .border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+                    .padding(10.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (qr != null) {
+                    Image(
+                        bitmap = qr.asImageBitmap(),
+                        contentDescription = stringResource(R.string.webmanager_qr_desc),
+                        modifier = Modifier.size(180.dp),
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            Surface(
+                shape = RoundedCornerShape(999.dp),
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "📸 Telefon Kamerasını Doğrultun",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(6.dp))
+
+            Text(
+                session.url,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
             )
 
             Spacer(Modifier.height(16.dp))
@@ -228,20 +229,167 @@ private fun Listening(session: ManagerServer.Session, onBack: () -> Unit) {
                 desc = "Uzun M3U veya Xtream linklerini kumandayla yazmak yerine telefonunuzun panosundan yapıştırıp aktarın.",
             )
 
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(16.dp))
 
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            Button(
+                onClick = onBack,
+                modifier = Modifier.fillMaxWidth(),
             ) {
-                Button(onClick = onBack) {
-                    Text(stringResource(R.string.common_done))
+                Text(stringResource(R.string.common_done))
+            }
+
+            Spacer(Modifier.height(6.dp))
+
+            Text(
+                "🔒 %100 Yerel Ağ • İnternetsiz Çalışır • Güvenli Token",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                textAlign = TextAlign.Center,
+            )
+        }
+    } else {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(40.dp, Alignment.CenterHorizontally),
+        ) {
+            // Left Column: QR Card & Link
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.widthIn(max = 300.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(Color.White)
+                        .border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), RoundedCornerShape(20.dp))
+                        .padding(12.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (qr != null) {
+                        Image(
+                            bitmap = qr.asImageBitmap(),
+                            contentDescription = stringResource(R.string.webmanager_qr_desc),
+                            modifier = Modifier.size(240.dp),
+                        )
+                    }
                 }
+
+                Spacer(Modifier.height(12.dp))
+
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "📸 Telefon Kamerasını Doğrultun",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+
                 Text(
-                    "🔒 %100 Yerel Ağ • İnternetsiz Çalışır • Güvenli Token",
+                    session.url,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
                 )
+            }
+
+            // Right Column: Title, Instructions, Features, Buttons
+            Column(
+                modifier = Modifier
+                    .widthIn(max = 580.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                // Live Status Indicator Pill
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF10B981).copy(alpha = 0.15f))
+                        .border(1.dp, Color(0xFF10B981).copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Color(0xFF10B981)),
+                    )
+                    Text(
+                        "CANLI BAĞLANTI HAZIR • AYNI WI-FI AĞI",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF34D399),
+                    )
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                Text(
+                    "Telefon Bağlantısı & Akıllı Kumanda",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+
+                Spacer(Modifier.height(6.dp))
+
+                Text(
+                    "Telefonunuzu anında kumandaya dönüştürün. Uygulama indirmenize gerek yoktur; açılan web panelinden TV'yi yönetebilir, kanalları açabilir veya IPTV listesi ekleyebilirsiniz.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                Spacer(Modifier.height(16.dp))
+
+                // 3 Instruction Steps Cards
+                StepRow(
+                    step = "1",
+                    title = "Akıllı Dokunmatik Kumanda",
+                    desc = "D-Pad yön tuşları, ses / kanal kontrolü, sayısal tuşlar ve TV'ye doğrudan arama metni gönderme.",
+                )
+                Spacer(Modifier.height(8.dp))
+                StepRow(
+                    step = "2",
+                    title = "Kanallara Göz At & TV'de Aç",
+                    desc = "Telefonunuzdan kategorileri ve kanalları listeleyin, tek dokunuşla TV ekranında hemen başlatın.",
+                )
+                Spacer(Modifier.height(8.dp))
+                StepRow(
+                    step = "3",
+                    title = "IPTV & M3U Listesi Ekle",
+                    desc = "Uzun M3U veya Xtream linklerini kumandayla yazmak yerine telefonunuzun panosundan yapıştırıp aktarın.",
+                )
+
+                Spacer(Modifier.height(18.dp))
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Button(onClick = onBack) {
+                        Text(stringResource(R.string.common_done))
+                    }
+                    Text(
+                        "🔒 %100 Yerel Ağ • İnternetsiz Çalışır • Güvenli Token",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    )
+                }
             }
         }
     }

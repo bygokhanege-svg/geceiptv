@@ -45,6 +45,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import app.opentv.core.TvCastHelper
 import androidx.compose.ui.Modifier
@@ -57,6 +58,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -395,12 +397,16 @@ private fun DetailBackdrop(
     backdropUrl: String?,
     posterUrl: String?,
     meta: String,
-    actions: @Composable RowScope.() -> Unit,
+    actions: @Composable () -> Unit,
 ) {
+    val configuration = LocalConfiguration.current
+    val isPhone = configuration.screenWidthDp < 600
+    val heroHeight = if (isPhone) 380.dp else 360.dp
+
     Box(
         Modifier
             .fillMaxWidth()
-            .height(360.dp)
+            .height(heroHeight)
             .background(MaterialTheme.colorScheme.surfaceVariant),
     ) {
         // Background: try the backdrop, fall back to the poster on load error, then to the gradient
@@ -428,33 +434,89 @@ private fun DetailBackdrop(
                 ),
             ),
         )
-        Row(
-            Modifier
-                .align(Alignment.BottomStart)
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 20.dp),
-            horizontalArrangement = Arrangement.spacedBy(20.dp),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            HeroPosterCard(posterUrl = posterUrl, title = title)
-            Column(Modifier.weight(1f)) {
-                Text(
-                    title,
-                    style = MaterialTheme.typography.headlineLarge,
-                    color = Color.White,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (meta.isNotBlank()) {
-                    Spacer(Modifier.height(8.dp))
-                    Text(meta, style = MaterialTheme.typography.titleMedium, color = Color.White.copy(alpha = 0.85f))
-                }
-                Spacer(Modifier.height(16.dp))
+
+        if (isPhone) {
+            Column(
+                Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+            ) {
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalAlignment = Alignment.Bottom,
+                ) {
+                    HeroPosterCard(posterUrl = posterUrl, title = title, isPhone = true)
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            title,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (meta.isNotBlank()) {
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                meta,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.White.copy(alpha = 0.85f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+                // Full width horizontal scrolling actions bar so buttons never squish or wrap vertically!
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    content = actions,
-                )
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    item {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            actions()
+                        }
+                    }
+                }
+            }
+        } else {
+            // Tablet / TV widescreen layout
+            Row(
+                Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(20.dp),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                HeroPosterCard(posterUrl = posterUrl, title = title, isPhone = false)
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.headlineLarge,
+                        color = Color.White,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (meta.isNotBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(meta, style = MaterialTheme.typography.titleMedium, color = Color.White.copy(alpha = 0.85f))
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        actions()
+                    }
+                }
             }
         }
     }
@@ -468,12 +530,14 @@ private fun DetailBackdrop(
  * hero's d-pad targets.
  */
 @Composable
-private fun HeroPosterCard(posterUrl: String?, title: String) {
+private fun HeroPosterCard(posterUrl: String?, title: String, isPhone: Boolean = false) {
     var posterFailed by remember(posterUrl) { mutableStateOf(false) }
+    val w = if (isPhone) 100.dp else 128.dp
+    val h = if (isPhone) 150.dp else 192.dp
     Box(
         Modifier
-            .width(128.dp)
-            .height(192.dp)
+            .width(w)
+            .height(h)
             .shadow(12.dp, RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
@@ -643,6 +707,8 @@ private fun DetailButton(
     primary: Boolean = false,
     onClick: () -> Unit,
 ) {
+    val configuration = LocalConfiguration.current
+    val isPhone = configuration.screenWidthDp < 600
     var focused by remember { mutableStateOf(false) }
     val container = when {
         focused -> MaterialTheme.colorScheme.primary
@@ -664,12 +730,27 @@ private fun DetailButton(
                 else Modifier,
             )
             .clickable(onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 12.dp),
+            .padding(
+                horizontal = if (isPhone) 14.dp else 18.dp,
+                vertical = if (isPhone) 10.dp else 12.dp,
+            ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, contentDescription = null, tint = content)
-        Spacer(Modifier.width(8.dp))
-        Text(label, style = MaterialTheme.typography.titleMedium, color = content)
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = content,
+            modifier = Modifier.size(if (isPhone) 20.dp else 24.dp),
+        )
+        Spacer(Modifier.width(if (isPhone) 6.dp else 8.dp))
+        Text(
+            label,
+            style = if (isPhone) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = content,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

@@ -397,9 +397,18 @@ fun DashboardScreen(
                 onOpenQr = onOpenWebManager,
             )
 
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Arama, Ayarlar ve Çoklu TV Özelleştirme Paneli (Canlı TV, Film, Dizi gridinin hemen altında)
+            BottomActionGrid(
+                onOpenSearch = onOpenSearch,
+                onOpenSettings = onOpenSettings,
+                onOpenMultiView = onOpenMultiView,
+            )
+
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Main Content Area (3 Columns)
+            // Main Content Area (3 Columns: Yeni Diziler, İzlemeye Devam Et, Yeni Filmler)
             Row(
                 modifier = Modifier.weight(1f),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -436,15 +445,6 @@ fun DashboardScreen(
                     )
                 }
             }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Alt Grid: Ayarlar, Arama, Çoklu TV Özelleştirme
-            BottomActionGrid(
-                onOpenSearch = onOpenSearch,
-                onOpenSettings = onOpenSettings,
-                onOpenMultiView = onOpenMultiView,
-            )
         }
     }
 }
