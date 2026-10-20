@@ -93,7 +93,12 @@ class PlayerController(
      * each other when another channel starts playing.
      */
     private val handleAudioFocus: Boolean = !preview,
+    val isVod: Boolean = false,
 ) {
+
+    init {
+        register(this)
+    }
 
     /** Channel-surf debounce for this controller — longer for the preview so browsing is calm. */
     private val switchDebounceMillis = if (preview) PREVIEW_SWITCH_DEBOUNCE_MILLIS else SWITCH_DEBOUNCE_MILLIS
@@ -144,11 +149,12 @@ class PlayerController(
 
     private val dataSourceFactory: androidx.media3.datasource.DataSource.Factory =
         DefaultDataSource.Factory(context, httpFactory).let { default ->
+            val base = if (isVod) VodCacheManager.buildCacheDataSourceFactory(context, default) else default
             val custom = buildMap<String, androidx.media3.datasource.DataSource.Factory> {
                 if (smbDataSourceFactory != null) put("smb", smbDataSourceFactory)
                 if (growingDataSourceFactory != null) put("optvrec", growingDataSourceFactory)
             }
-            if (custom.isEmpty()) default else RoutingDataSourceFactory(default, custom)
+            if (custom.isEmpty()) base else RoutingDataSourceFactory(base, custom)
         }
 
     /**
@@ -214,15 +220,21 @@ class PlayerController(
             .build()
     }
 
-    private val dynamicMinBuffer = if (preview) PREVIEW_MIN_BUFFER_MILLIS else (appSettings?.streamMinBufferMs?.value ?: MIN_BUFFER_MILLIS)
+    private val dynamicMinBuffer = when {
+        preview -> PREVIEW_MIN_BUFFER_MILLIS
+        isVod -> VOD_MIN_BUFFER_MILLIS
+        else -> (appSettings?.streamMinBufferMs?.value ?: MIN_BUFFER_MILLIS)
+    }
     private val dynamicMaxBuffer = when {
         preview -> PREVIEW_MAX_BUFFER_MILLIS
+        isVod -> (appSettings?.vodMaxBufferMs?.value ?: VOD_MAX_BUFFER_MILLIS)
         dvr -> DVR_MAX_BUFFER_MILLIS
         liveRecording -> LIVE_REC_MAX_BUFFER_MILLIS
         else -> (appSettings?.streamMaxBufferMs?.value ?: MAX_BUFFER_MILLIS)
     }
     private val dynamicPlaybackStartBuffer = when {
         preview -> PREVIEW_BUFFER_FOR_PLAYBACK_MILLIS
+        isVod -> VOD_BUFFER_FOR_PLAYBACK_MILLIS
         liveRecording -> LIVE_REC_BUFFER_FOR_PLAYBACK_MILLIS
         else -> (appSettings?.streamStartBufferMs?.value ?: BUFFER_FOR_PLAYBACK_MILLIS)
     }
@@ -250,13 +262,17 @@ class PlayerController(
                     dynamicPlaybackStartBuffer,
                     when {
                         preview -> PREVIEW_BUFFER_AFTER_REBUFFER_MILLIS
+                        isVod -> VOD_BUFFER_AFTER_REBUFFER_MILLIS
                         liveRecording -> LIVE_REC_BUFFER_AFTER_REBUFFER_MILLIS
                         else -> (dynamicPlaybackStartBuffer * 2).coerceAtLeast(BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MILLIS)
                     },
                 )
                 .setPrioritizeTimeOverSizeThresholds(true)
-                // Retain the last few minutes so pause/rewind of live TV has something to seek into.
-                .apply { if (dvr) setBackBuffer(DVR_BACK_BUFFER_MILLIS, true) }
+                // Retain the back-buffer for instant rewinds in VOD and live pause in DVR
+                .apply {
+                    if (isVod) setBackBuffer(VOD_BACK_BUFFER_MILLIS, true)
+                    else if (dvr) setBackBuffer(DVR_BACK_BUFFER_MILLIS, true)
+                }
                 .build(),
         )
         .build()
@@ -632,12 +648,51 @@ class PlayerController(
     }
 
     fun release() {
+        unregister(this)
         switchJob?.cancel()
         player.release()
     }
 
     companion object {
         const val DEFAULT_USER_AGENT = "GECEiptv/1.0 (Android)"
+
+        private val activeControllers = java.util.Collections.newSetFromMap(java.util.WeakHashMap<PlayerController, Boolean>())
+
+        fun register(controller: PlayerController) {
+            synchronized(activeControllers) { activeControllers.add(controller) }
+        }
+
+        fun unregister(controller: PlayerController) {
+            synchronized(activeControllers) { activeControllers.remove(controller) }
+        }
+
+        /**
+         * Pauses all active playback instances across the application.
+         * Called when the app transitions to the background on TVs or when leaving foreground.
+         */
+        fun pauseAll() {
+            synchronized(activeControllers) {
+                for (controller in activeControllers) {
+                    runCatching {
+                        controller.player.playWhenReady = false
+                        controller.player.pause()
+                    }
+                }
+            }
+        }
+
+        /**
+         * Stops and releases active resources if needed when the activity is destroyed.
+         */
+        fun stopAll() {
+            synchronized(activeControllers) {
+                for (controller in activeControllers) {
+                    runCatching {
+                        controller.stop()
+                    }
+                }
+            }
+        }
 
         /**
          * Computes the alternate stream format URL (m3u8 <-> ts) for Xtream and IPTV live/vod links.
@@ -673,6 +728,18 @@ class PlayerController(
         const val MAX_BUFFER_MILLIS = 15_000
         const val BUFFER_FOR_PLAYBACK_MILLIS = 1_000
         const val BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MILLIS = 2_000
+
+        /**
+         * VOD (Film / Dizi) stream buffer tuning (YouTube-style forward buffering):
+         * Starts playback fast (1.5s), keeps 30s min, and pre-buffers up to 90s (user-configurable up to 120s)
+         * in the background. If internet drops/stutters, playback stays buttery smooth.
+         * Also keeps 30s back-buffer so instant rewinds do not hit the IPTV server.
+         */
+        const val VOD_MIN_BUFFER_MILLIS = 30_000
+        const val VOD_MAX_BUFFER_MILLIS = 90_000
+        const val VOD_BUFFER_FOR_PLAYBACK_MILLIS = 1_500
+        const val VOD_BUFFER_AFTER_REBUFFER_MILLIS = 3_000
+        const val VOD_BACK_BUFFER_MILLIS = 30_000
 
         // DVR mode (pause & rewind live TV): keep 60s behind live edge to balance seekability with RAM.
         const val DVR_BACK_BUFFER_MILLIS = 60_000

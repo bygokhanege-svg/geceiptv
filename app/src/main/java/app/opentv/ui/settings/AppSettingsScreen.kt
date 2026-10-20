@@ -58,6 +58,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
@@ -247,7 +248,65 @@ fun AppSettingsScreen(onBack: () -> Unit) {
             )
         }
 
+        VodBufferingSection(settings)
+
         TmdbKeySection(settings)
+    }
+}
+
+@Composable
+private fun VodBufferingSection(settings: AppSettings) {
+    val currentMode by settings.vodBufferMode.collectAsState()
+
+    SettingsSection("Film ve Dizi Akıllı Tamponlama (YouTube Modu)") {
+        Text(
+            "Film ve dizilerde donma ve takılmaları önlemek için arka planda ileriye doğru akıllı indirme yapar. LRU disk kalkanı sayesinde cihaz hafızası asla şişmez (Maks. 250 MB).",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        Spacer(Modifier.height(8.dp))
+
+        val options = listOf(
+            Triple("FAST", "Hızlı Başlatma (30 sn)", "Düşük RAM'li cihazlar veya hızlı film atlama için ideal."),
+            Triple("BALANCED", "Dengeli - YouTube Modu (90 sn - Önerilen)", "Arka planda 1.5 dakika önceden indirir; takılmaları ve dalgalanmaları tamamen önler."),
+            Triple("ULTRA", "Süper Kararlı (120 sn)", "Zayıf Wi-Fi ve yavaş internet bağlantıları için 2 dakikalık derin tampon."),
+        )
+
+        options.forEach { (mode, label, desc) ->
+            var isFocused by remember { mutableStateOf(false) }
+            val isSelected = currentMode == mode
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(
+                        if (isFocused) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                        else if (isSelected) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        else Color.Transparent,
+                    )
+                    .border(
+                        if (isFocused) 2.dp else if (isSelected) 1.dp else 0.dp,
+                        if (isFocused) MaterialTheme.colorScheme.primary else if (isSelected) MaterialTheme.colorScheme.outline.copy(alpha = 0.4f) else Color.Transparent,
+                        RoundedCornerShape(10.dp),
+                    )
+                    .clickable { settings.setVodBufferMode(mode) }
+                    .onFocusChanged { isFocused = it.isFocused }
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(
+                    selected = isSelected,
+                    onClick = { settings.setVodBufferMode(mode) },
+                )
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(label, style = MaterialTheme.typography.titleSmall, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
+                    Text(desc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+        }
     }
 }
 

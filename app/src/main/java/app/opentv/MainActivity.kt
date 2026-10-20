@@ -217,6 +217,7 @@ class MainActivity : ComponentActivity() {
             packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
 
     fun maybeEnterPip() {
+        if (isTelevisionDevice) return // On TV, switching away must not try background PiP audio
         if (!app.opentv.core.PipState.eligible || !app.opentv.core.PipState.isPlaying) return
         enterPipNow()
     }
@@ -241,6 +242,20 @@ class MainActivity : ComponentActivity() {
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         app.opentv.core.PipState.setInPip(isInPictureInPictureMode)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        val inPip = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInPictureInPictureMode
+        if (!inPip) {
+            // Cut off background audio and playback immediately when leaving the app
+            app.opentv.player.PlayerController.pauseAll()
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        app.opentv.player.PlayerController.stopAll()
     }
 
     companion object {

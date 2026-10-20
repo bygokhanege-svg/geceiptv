@@ -193,6 +193,33 @@ fun MultiViewScreen(
         }
     }
 
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_STOP -> {
+                    controllers.forEach { ctrl ->
+                        runCatching {
+                            ctrl.player.playWhenReady = false
+                            ctrl.player.pause()
+                        }
+                    }
+                }
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            controllers.forEach { it.release() }
+        }
+    }
+
     /**
      * Strict Exclusive Audio Dispatcher:
      * Only the slot with active D-pad focus outputs sound (volume = 1f).

@@ -327,6 +327,36 @@ class AppSettings private constructor(context: Context) {
         _streamStartBufferMs.value = startMs
     }
 
+    // ---- VOD (Movies & Series) YouTube-Style Smart Buffering ---------------------------------
+
+    /**
+     * VOD forward buffering preset:
+     * - "FAST": 30s max buffer (quick seek / low RAM devices)
+     * - "BALANCED": 90s max buffer (YouTube mode - recommended)
+     * - "ULTRA": 120s max buffer (slow/fluctuating internet)
+     */
+    private val _vodBufferMode = MutableStateFlow(prefs.getString(KEY_VOD_BUFFER_MODE, "BALANCED") ?: "BALANCED")
+    val vodBufferMode: StateFlow<String> = _vodBufferMode.asStateFlow()
+
+    private val _vodMaxBufferMs = MutableStateFlow(
+        when (_vodBufferMode.value) {
+            "FAST" -> 30_000
+            "ULTRA" -> 120_000
+            else -> 90_000
+        }
+    )
+    val vodMaxBufferMs: StateFlow<Int> = _vodMaxBufferMs.asStateFlow()
+
+    fun setVodBufferMode(mode: String) {
+        prefs.edit().putString(KEY_VOD_BUFFER_MODE, mode).apply()
+        _vodBufferMode.value = mode
+        _vodMaxBufferMs.value = when (mode) {
+            "FAST" -> 30_000
+            "ULTRA" -> 120_000
+            else -> 90_000
+        }
+    }
+
     private val _maxMultiViewSlots = MutableStateFlow(prefs.getInt(KEY_MAX_MULTIVIEW_SLOTS, 3))
     val maxMultiViewSlots: StateFlow<Int> = _maxMultiViewSlots.asStateFlow()
 
@@ -670,6 +700,7 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_STREAM_MIN_BUFFER = "stream_min_buffer_ms"
         private const val KEY_STREAM_MAX_BUFFER = "stream_max_buffer_ms"
         private const val KEY_STREAM_START_BUFFER = "stream_start_buffer_ms"
+        private const val KEY_VOD_BUFFER_MODE = "vod_buffer_mode"
         private const val KEY_MAX_MULTIVIEW_SLOTS = "max_multiview_slots"
         private const val KEY_ACTIVE_SOURCE_ID = "active_source_id"
 

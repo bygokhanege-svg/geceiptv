@@ -178,6 +178,7 @@ fun VodPlayerScreen(
             growingDataSourceFactory =
                 app.opentv.player.GrowingRecordingDataSource.Factory(context.applicationContext),
             liveRecording = growingRec,
+            isVod = !growingRec,
         ).apply {
             onFormatResolved = { _, workingUrl ->
                 currentStreamUrl = workingUrl
@@ -186,6 +187,7 @@ fun VodPlayerScreen(
     }
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
+    var bufferedMs by remember { mutableLongStateOf(0L) }
     var skipOverlayText by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(skipOverlayText) {
         if (skipOverlayText != null) {
@@ -410,6 +412,30 @@ fun VodPlayerScreen(
         }
     }
 
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_STOP -> {
+                    val act = context.findActivity()
+                    val inPip = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N &&
+                        (act?.isInPictureInPictureMode == true)
+                    if (!inPip) {
+                        paused = true
+                        controller.player.playWhenReady = false
+                        controller.player.pause()
+                        scope.launch { savePosition() }
+                    }
+                }
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     LaunchedEffect(currentMediaKey, effectiveUserAgent) {
         val resumeFrom = graph.playbackPositions.get(settings.activeProfileId.value, currentMediaKey)
             ?.takeIf { !it.isFinished }?.positionMillis ?: 0L
@@ -448,6 +474,7 @@ fun VodPlayerScreen(
                 // can skip ahead) is what's been read into the buffer.
                 durationMs = if (growingRec) controller.player.bufferedPosition.coerceAtLeast(0)
                 else controller.player.duration.takeIf { it > 0 } ?: 0
+                bufferedMs = controller.player.bufferedPosition.coerceAtLeast(0)
             }
             delay(500)
         }
@@ -718,23 +745,37 @@ fun VodPlayerScreen(
                         color = Color.White.copy(alpha = 0.85f),
                     )
                     Spacer(Modifier.width(10.dp))
-                    Slider(
-                        value = if (scrubbing) scrubValue else (pendingSeekTargetMs?.toFloat() ?: positionMs.toFloat()),
-                        valueRange = 0f..(durationMs.takeIf { it > 0 }?.toFloat() ?: 1f),
-                        onValueChange = { scrubbing = true; scrubValue = it; interaction++ },
-                        onValueChangeFinished = {
-                            val target = scrubValue.toLong()
-                            positionMs = target
-                            scrubbing = false
-                            seekDebounceJob?.cancel()
-                            seekDebounceJob = scope.launch {
-                                delay(300)
-                                controller.player.seekTo(target)
-                            }
-                            interaction++
-                        },
-                        modifier = Modifier.weight(1f),
-                    )
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                        // YouTube-style background buffer track (shows forward buffered extent ahead of playback)
+                        if (durationMs > 0 && bufferedMs > 0) {
+                            val bufferFraction = (bufferedMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(bufferFraction)
+                                    .height(4.dp)
+                                    .padding(horizontal = 4.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(Color.White.copy(alpha = 0.35f))
+                            )
+                        }
+                        Slider(
+                            value = if (scrubbing) scrubValue else (pendingSeekTargetMs?.toFloat() ?: positionMs.toFloat()),
+                            valueRange = 0f..(durationMs.takeIf { it > 0 }?.toFloat() ?: 1f),
+                            onValueChange = { scrubbing = true; scrubValue = it; interaction++ },
+                            onValueChangeFinished = {
+                                val target = scrubValue.toLong()
+                                positionMs = target
+                                scrubbing = false
+                                seekDebounceJob?.cancel()
+                                seekDebounceJob = scope.launch {
+                                    delay(300)
+                                    controller.player.seekTo(target)
+                                }
+                                interaction++
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                     Spacer(Modifier.width(10.dp))
                     Text(
                         formatDuration(durationMs),
