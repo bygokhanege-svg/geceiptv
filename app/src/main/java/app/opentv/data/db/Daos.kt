@@ -144,23 +144,33 @@ interface ChannelDao {
         """
         SELECT * FROM channels
         WHERE hidden = 0
-          AND (displayName LIKE '%' || :query || '%' OR name LIKE '%' || :query || '%')
+          AND (
+              displayName LIKE '%' || :query || '%' OR name LIKE '%' || :query || '%'
+              OR (:q2 != '' AND (displayName LIKE '%' || :q2 || '%' OR name LIKE '%' || :q2 || '%'))
+              OR (:q3 != '' AND (displayName LIKE '%' || :q3 || '%' OR name LIKE '%' || :q3 || '%'))
+              OR (:q4 != '' AND (displayName LIKE '%' || :q4 || '%' OR name LIKE '%' || :q4 || '%'))
+          )
         ORDER BY favourite DESC, sortIndex, displayName
         LIMIT :limit
         """
     )
-    fun search(query: String, limit: Int = 200): Flow<List<Channel>>
+    fun search(query: String, q2: String = "", q3: String = "", q4: String = "", limit: Int = 200): Flow<List<Channel>>
 
     /** Like [search] but keeps hidden channels in — the channel manager needs them to unhide. */
     @Query(
         """
         SELECT * FROM channels
-        WHERE (displayName LIKE '%' || :query || '%' OR name LIKE '%' || :query || '%')
+        WHERE (
+            displayName LIKE '%' || :query || '%' OR name LIKE '%' || :query || '%'
+            OR (:q2 != '' AND (displayName LIKE '%' || :q2 || '%' OR name LIKE '%' || :q2 || '%'))
+            OR (:q3 != '' AND (displayName LIKE '%' || :q3 || '%' OR name LIKE '%' || :q3 || '%'))
+            OR (:q4 != '' AND (displayName LIKE '%' || :q4 || '%' OR name LIKE '%' || :q4 || '%'))
+        )
         ORDER BY hidden, favourite DESC, sortIndex, displayName
         LIMIT :limit
         """
     )
-    fun searchIncludingHidden(query: String, limit: Int = 200): Flow<List<Channel>>
+    fun searchIncludingHidden(query: String, q2: String = "", q3: String = "", q4: String = "", limit: Int = 200): Flow<List<Channel>>
 
     @Query("SELECT * FROM channels WHERE id = :id")
     suspend fun byId(id: Long): Channel?
@@ -448,8 +458,20 @@ interface MovieDao {
     @Query("SELECT * FROM movies WHERE favourite = 1 AND (:sourceId IS NULL OR sourceId = :sourceId) ORDER BY name")
     fun observeFavourites(sourceId: Long? = null): Flow<List<Movie>>
 
-    @Query("SELECT * FROM movies WHERE (:sourceId IS NULL OR sourceId = :sourceId) AND name LIKE '%' || :query || '%' ORDER BY name LIMIT :limit")
-    fun search(query: String, limit: Int = 200, sourceId: Long? = null): Flow<List<Movie>>
+    @Query(
+        """
+        SELECT * FROM movies
+        WHERE (:sourceId IS NULL OR sourceId = :sourceId)
+          AND (
+              name LIKE '%' || :query || '%'
+              OR (:q2 != '' AND name LIKE '%' || :q2 || '%')
+              OR (:q3 != '' AND name LIKE '%' || :q3 || '%')
+              OR (:q4 != '' AND name LIKE '%' || :q4 || '%')
+          )
+        ORDER BY name LIMIT :limit
+        """
+    )
+    fun search(query: String, q2: String = "", q3: String = "", q4: String = "", limit: Int = 200, sourceId: Long? = null): Flow<List<Movie>>
 
     /** Newest-first, for the "Recently Added" home row. Reactive so it fills in as VOD sync lands. */
     @Query("SELECT * FROM movies WHERE (:sourceId IS NULL OR sourceId = :sourceId) ORDER BY addedMillis DESC LIMIT :limit")
@@ -549,8 +571,20 @@ interface SeriesDao {
     )
     fun observe(categoryId: String?, sourceId: Long? = null): Flow<List<Series>>
 
-    @Query("SELECT * FROM series WHERE (:sourceId IS NULL OR sourceId = :sourceId) AND name LIKE '%' || :query || '%' ORDER BY name LIMIT :limit")
-    fun search(query: String, limit: Int = 200, sourceId: Long? = null): Flow<List<Series>>
+    @Query(
+        """
+        SELECT * FROM series
+        WHERE (:sourceId IS NULL OR sourceId = :sourceId)
+          AND (
+              name LIKE '%' || :query || '%'
+              OR (:q2 != '' AND name LIKE '%' || :q2 || '%')
+              OR (:q3 != '' AND name LIKE '%' || :q3 || '%')
+              OR (:q4 != '' AND name LIKE '%' || :q4 || '%')
+          )
+        ORDER BY name LIMIT :limit
+        """
+    )
+    fun search(query: String, q2: String = "", q3: String = "", q4: String = "", limit: Int = 200, sourceId: Long? = null): Flow<List<Series>>
 
     /** Newest-first, for the "Recently Added" home row. Reactive so it fills in as VOD sync lands. */
     @Query("SELECT * FROM series WHERE (:sourceId IS NULL OR sourceId = :sourceId) ORDER BY addedMillis DESC LIMIT :limit")

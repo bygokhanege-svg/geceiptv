@@ -105,6 +105,14 @@ fun DashboardScreen(
     val recommendedMovies by vodViewModel.recommendedMovies.collectAsState()
     val continueWatching by vodViewModel.continueWatching.collectAsState()
 
+    val hasSources = sourcesUi.sources.isNotEmpty()
+    LaunchedEffect(hasSources) {
+        if (hasSources) {
+            vodViewModel.ensureVodLoaded()
+            vodViewModel.loadHomeFeeds()
+        }
+    }
+
     var currentTime by remember { mutableStateOf(Calendar.getInstance().time) }
     LaunchedEffect(Unit) {
         while (true) {

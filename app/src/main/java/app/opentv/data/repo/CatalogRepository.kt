@@ -56,6 +56,58 @@ internal fun distinctByQuality(channels: List<app.opentv.data.model.Channel>): L
     return channels.filter { seen.add("${it.qualityRank}|${it.qualityLabel.lowercase()}") }
 }
 
+private val trLocale = java.util.Locale("tr", "TR")
+
+private fun foldToAscii(s: String): String = s
+    .replace('ı', 'i').replace('İ', 'I')
+    .replace('ğ', 'g').replace('Ğ', 'G')
+    .replace('ü', 'u').replace('Ü', 'U')
+    .replace('ş', 's').replace('Ş', 'S')
+    .replace('ö', 'o').replace('Ö', 'O')
+    .replace('ç', 'c').replace('Ç', 'C')
+
+private fun foldAsciiToTurkishUpper(s: String): String {
+    var res = s
+        .replace('c', 'Ç').replace('C', 'Ç')
+        .replace('s', 'Ş').replace('S', 'Ş')
+    if (res.contains('o', ignoreCase = true)) {
+        res = res.replace('o', 'Ö').replace('O', 'Ö')
+        // Under Turkish vowel harmony, closed vowel after Ö is always Ü
+        res = res.replace('u', 'Ü').replace('U', 'Ü')
+    }
+    return res.uppercase(trLocale)
+}
+
+internal fun expandQueryVariants(raw: String): List<String> {
+    val trimmed = raw.trim()
+    if (trimmed.isEmpty()) return listOf("", "", "", "")
+    val v1 = trimmed
+    val v2 = trimmed.uppercase(trLocale)
+    val v3 = trimmed.uppercase(java.util.Locale.ROOT)
+
+    val hasTurkish = trimmed.any { it in "çÇğĞıİöÖşŞüÜ" }
+    val v4 = if (hasTurkish) {
+        foldToAscii(trimmed).uppercase(java.util.Locale.ROOT)
+    } else {
+        foldAsciiToTurkishUpper(trimmed)
+    }
+
+    val distinct = linkedSetOf(v1, v2, v3, v4)
+    if (distinct.size < 4) {
+        val title = trimmed.lowercase(trLocale).replaceFirstChar {
+            if (it.isLowerCase()) it.titlecase(trLocale) else it.toString()
+        }
+        distinct.add(title)
+    }
+    val list = distinct.toList()
+    return listOf(
+        list.getOrElse(0) { "" },
+        list.getOrElse(1) { "" },
+        list.getOrElse(2) { "" },
+        list.getOrElse(3) { "" }
+    )
+}
+
 /** A home/detail row: a genre label and the titles under it. Generic so movies and series share it. */
 @androidx.compose.runtime.Immutable
 data class GenreGroup<T>(val genre: String, val items: List<T>)
@@ -185,16 +237,25 @@ class CatalogRepository(
     fun observeEpisodes(sourceId: Long, seriesId: String): Flow<List<Episode>> =
         episodeDao.observeForSeries(sourceId, seriesId)
 
-    fun searchChannels(query: String): Flow<List<Channel>> = channelDao.search(query)
+    fun searchChannels(query: String): Flow<List<Channel>> {
+        val v = expandQueryVariants(query)
+        return channelDao.search(v[0], v[1], v[2], v[3])
+    }
 
-    fun searchChannelsIncludingHidden(query: String): Flow<List<Channel>> =
-        channelDao.searchIncludingHidden(query)
+    fun searchChannelsIncludingHidden(query: String): Flow<List<Channel>> {
+        val v = expandQueryVariants(query)
+        return channelDao.searchIncludingHidden(v[0], v[1], v[2], v[3])
+    }
 
-    fun searchMovies(query: String, sourceId: Long? = null): Flow<List<Movie>> =
-        movieDao.search(query, sourceId = sourceId)
+    fun searchMovies(query: String, sourceId: Long? = null): Flow<List<Movie>> {
+        val v = expandQueryVariants(query)
+        return movieDao.search(v[0], v[1], v[2], v[3], sourceId = sourceId)
+    }
 
-    fun searchSeries(query: String, sourceId: Long? = null): Flow<List<Series>> =
-        seriesDao.search(query, sourceId = sourceId)
+    fun searchSeries(query: String, sourceId: Long? = null): Flow<List<Series>> {
+        val v = expandQueryVariants(query)
+        return seriesDao.search(v[0], v[1], v[2], v[3], sourceId = sourceId)
+    }
 
     suspend fun channel(id: Long): Channel? = channelDao.byId(id)
 
@@ -691,8 +752,18 @@ class CatalogRepository(
         nowUtcMillis: Long,
         force: Boolean = false,
     ) = withContext(Dispatchers.IO) {
-        runCatching { if (source.kind == SourceKind.XTREAM) syncXtreamVod(source, nowUtcMillis, force = force) }
-            .onFailure { Log.w(TAG, "VOD sync failed for source ${source.id}", it) }
+        runCatching {
+            when (source.kind) {
+                SourceKind.XTREAM -> syncXtreamVod(source, nowUtcMillis, force = force)
+                SourceKind.M3U -> {
+                    val count = movieDao.count(source.id)
+                    if (force || count == 0) {
+                        syncM3u(source, nowUtcMillis)
+                    }
+                }
+                else -> {}
+            }
+        }.onFailure { Log.w(TAG, "VOD sync failed for source ${source.id}", it) }
     }
 
     private suspend fun syncXtreamLive(source: Source, nowUtcMillis: Long): SyncResult {
@@ -805,27 +876,20 @@ class CatalogRepository(
         }
 
         try {
-            coroutineScope {
-                val movieCatsDeferred = async(Dispatchers.IO) {
-                    if (moviesOn) runCatching { api.movieCategories(source) }.getOrDefault(emptyList()) else emptyList()
-                }
-                val moviesDeferred = async(Dispatchers.IO) {
-                    if (moviesOn) runCatching { api.movies(source) }.getOrDefault(emptyList()) else emptyList()
-                }
-                val seriesCatsDeferred = async(Dispatchers.IO) {
-                    if (seriesOn) runCatching { api.seriesCategories(source) }.getOrDefault(emptyList()) else emptyList()
-                }
-                val seriesDeferred = async(Dispatchers.IO) {
-                    if (seriesOn) runCatching { api.series(source) }.getOrDefault(emptyList()) else emptyList()
+            if (moviesOn) {
+                StatusBus.set("Film kategorileri alınıyor…", 0.05f)
+                val movieCategories = runCatching { api.movieCategories(source) }
+                    .onFailure { Log.w(TAG, "Movie categories fetch failed for source ${source.id}", it) }
+                    .getOrDefault(emptyList())
+                if (movieCategories.isNotEmpty()) {
+                    categoryDao.upsertAll(movieCategories)
                 }
 
-                val movieCategories = movieCatsDeferred.await()
-                val seriesCategories = seriesCatsDeferred.await()
-                if (movieCategories.isNotEmpty() || seriesCategories.isNotEmpty()) {
-                    categoryDao.upsertAll(movieCategories + seriesCategories)
-                }
+                StatusBus.set("Filmler listesi alınıyor…", 0.10f)
+                val movies = runCatching { api.movies(source) }
+                    .onFailure { Log.w(TAG, "Movies fetch failed for source ${source.id}", it) }
+                    .getOrDefault(emptyList())
 
-                val movies = moviesDeferred.await()
                 if (movies.isNotEmpty()) {
                     val total = movies.size
                     val chunks = movies.chunked(500)
@@ -834,12 +898,26 @@ class CatalogRepository(
                         movieDao.upsertAll(chunk)
                         inserted += chunk.size
                         val pct = (inserted.toFloat() / total * 100).toInt().coerceIn(0, 100)
-                        StatusBus.set("Filmler yükleniyor: $inserted / $total (%$pct)", inserted.toFloat() / total)
+                        StatusBus.set("Filmler yükleniyor: $inserted / $total (%$pct)", 0.10f + 0.40f * (inserted.toFloat() / total))
                         yield()
                     }
                 }
+            }
 
-                val series = seriesDeferred.await()
+            if (seriesOn) {
+                StatusBus.set("Dizi kategorileri alınıyor…", 0.55f)
+                val seriesCategories = runCatching { api.seriesCategories(source) }
+                    .onFailure { Log.w(TAG, "Series categories fetch failed for source ${source.id}", it) }
+                    .getOrDefault(emptyList())
+                if (seriesCategories.isNotEmpty()) {
+                    categoryDao.upsertAll(seriesCategories)
+                }
+
+                StatusBus.set("Diziler listesi alınıyor…", 0.60f)
+                val series = runCatching { api.series(source) }
+                    .onFailure { Log.w(TAG, "Series fetch failed for source ${source.id}", it) }
+                    .getOrDefault(emptyList())
+
                 if (series.isNotEmpty()) {
                     val total = series.size
                     val chunks = series.chunked(500)
@@ -848,13 +926,13 @@ class CatalogRepository(
                         seriesDao.upsertAll(chunk)
                         inserted += chunk.size
                         val pct = (inserted.toFloat() / total * 100).toInt().coerceIn(0, 100)
-                        StatusBus.set("Diziler yükleniyor: $inserted / $total (%$pct)", inserted.toFloat() / total)
+                        StatusBus.set("Diziler yükleniyor: $inserted / $total (%$pct)", 0.60f + 0.40f * (inserted.toFloat() / total))
                         yield()
                     }
                 }
-
-                settings.setVodSyncedAtMillis(source.id, nowUtcMillis)
             }
+
+            settings.setVodSyncedAtMillis(source.id, nowUtcMillis)
         } finally {
             StatusBus.set(null)
         }
@@ -875,9 +953,9 @@ class CatalogRepository(
             M3uParser.parse(stream, source.id)
         }
 
-        if (parsed.channels.isEmpty()) {
+        if (parsed.channels.isEmpty() && parsed.movies.isEmpty()) {
             return SyncResult.Failed(
-                "No channels found in that playlist. Check the URL points at an M3U file.",
+                "No channels or movies found in that playlist. Check the URL points at an M3U file.",
                 null,
             )
         }
@@ -901,13 +979,38 @@ class CatalogRepository(
         val categoryNames = categories.associate { it.id to it.name }
         channelDao.replaceCatalogue(source.id, normalized(parsed.channels, categoryNames), nowUtcMillis)
 
+        if (parsed.movies.isNotEmpty()) {
+            val movieCategories = parsed.movies
+                .mapNotNull { it.categoryId }
+                .distinct()
+                .sorted()
+                .mapIndexed { index, name ->
+                    Category(
+                        id = name,
+                        sourceId = source.id,
+                        name = name,
+                        kind = StreamKind.MOVIE,
+                        sortIndex = index,
+                    )
+                }
+            if (movieCategories.isNotEmpty()) {
+                categoryDao.upsertAll(movieCategories)
+            }
+            val chunks = parsed.movies.chunked(500)
+            for (chunk in chunks) {
+                movieDao.upsertAll(chunk)
+                yield()
+            }
+            settings.setVodSyncedAtMillis(source.id, nowUtcMillis)
+        }
+
         // If the playlist declared its own guide URL and the user did not set one, adopt it.
         if (source.epgUrl.isNullOrBlank() && !parsed.declaredEpgUrl.isNullOrBlank()) {
             sourceDao.update(source.copy(epgUrl = parsed.declaredEpgUrl))
         }
 
         sourceDao.markCatalogSynced(source.id, nowUtcMillis)
-        return SyncResult.Success(parsed.channels.size, 0, 0)
+        return SyncResult.Success(parsed.channels.size, parsed.movies.size, 0)
     }
 
     /**
@@ -1062,6 +1165,7 @@ class CatalogRepository(
         seriesDao.deleteForSource(sourceId)
         episodeDao.deleteForSource(sourceId)
         sourceDao.delete(sourceId)
+        settings.setVodSyncedAtMillis(sourceId, 0L)
         val remaining = sourceDao.enabled()
         if (remaining.isEmpty()) {
             settings.setAccountExpiryMillis(0L)

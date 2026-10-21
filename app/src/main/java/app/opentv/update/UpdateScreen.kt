@@ -321,23 +321,19 @@ class UpdateViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = UpdateHub.state
     val state = _state.asStateFlow()
 
-    init { checkThrottled() }
+    init { checkOnLaunch() }
 
     /**
-     * Hits the network at most once every [CHECK_INTERVAL_MS]. The guide already re-syncs on
-     * every launch; adding an unconditional GitHub round-trip on top of that would be rude to
-     * both GitHub's rate limit and the user's connection, for information that changes rarely.
+     * Checks for updates on app launch. Runs asynchronously in the background so it never blocks
+     * startup or live TV playback. If a newer release is found, prompts the user via UpdateGate.
      */
-    private fun checkThrottled() {
+    fun checkOnLaunch() {
         viewModelScope.launch {
-            val prefs = getApplication<Application>()
-                .getSharedPreferences("opentv", Context.MODE_PRIVATE)
-            val now = System.currentTimeMillis()
-            if (now - prefs.getLong(KEY_LAST_CHECK, 0L) < CHECK_INTERVAL_MS) return@launch
-
+            kotlinx.coroutines.delay(1200)
             val update = checker.check()
-            prefs.edit().putLong(KEY_LAST_CHECK, now).apply()
-            if (update != null) _state.value = UpdateUiState.Available(update)
+            if (update != null) {
+                _state.value = UpdateUiState.Available(update)
+            }
         }
     }
 

@@ -71,6 +71,7 @@ import app.opentv.ui.ProfilesViewModel
 import app.opentv.ui.SourcesViewModel
 import app.opentv.ui.channels.ChannelManagerScreen
 import app.opentv.ui.channels.SearchScreen
+import app.opentv.ui.channels.SearchScope
 import app.opentv.ui.VodViewModel
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
@@ -281,7 +282,7 @@ object Routes {
     const val HOME = "home"
     const val ADD_SOURCE = "add-source"
     const val PLAYER = "player/{channelId}"
-    const val SEARCH = "search?q={q}"
+    const val SEARCH = "search?q={q}&scope={scope}"
     const val EPG_SETTINGS = "epg-settings"
     const val APP_SETTINGS = "app-settings"
     const val LANGUAGE = "language"
@@ -312,8 +313,16 @@ object Routes {
     const val MULTIVIEW = "multiview?channelId={channelId}"
     const val ADMIN_PANEL = "admin-panel"
 
-    fun search(query: String = ""): String =
-        if (query.isNotBlank()) "search?q=${java.net.URLEncoder.encode(query, "UTF-8")}" else "search"
+    fun search(query: String = "", scope: String? = null): String {
+        val params = mutableListOf<String>()
+        if (query.isNotBlank()) {
+            params.add("q=${java.net.URLEncoder.encode(query, "UTF-8")}")
+        }
+        if (!scope.isNullOrBlank()) {
+            params.add("scope=${java.net.URLEncoder.encode(scope, "UTF-8")}")
+        }
+        return if (params.isNotEmpty()) "search?${params.joinToString("&")}" else "search"
+    }
     fun player(channelId: Long) = "player/$channelId"
     fun multiView(channelId: Long? = null): String =
         if (channelId != null) "multiview?channelId=$channelId" else "multiview"
@@ -602,7 +611,7 @@ private fun GeceIptvApp(isTelevision: Boolean) {
                     },
                     onAddSource = { navController.navigate(Routes.ADD_SOURCE) },
                     onRefresh = sourcesViewModel::refreshAll,
-                    onOpenSearch = { navController.navigate(Routes.SEARCH) },
+                    onOpenSearch = { scope -> navController.navigate(Routes.search(scope = scope)) },
                     onOpenSettings = { navController.navigate(Routes.SETTINGS_HUB) },
                     onOpenLicense = { navController.navigate(Routes.DEVICE_LICENSE) },
                     onOpenProfiles = { navController.navigate(Routes.PROFILES) },
@@ -657,23 +666,46 @@ private fun GeceIptvApp(isTelevision: Boolean) {
                         nullable = true
                         defaultValue = null
                     },
+                    navArgument("scope") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
                 ),
             ) { entry ->
-                val initialQuery = entry.arguments?.getString("q") ?: ""
+                val rawQ = entry.arguments?.getString("q")
+                val initialQuery = if (rawQ == null || rawQ == "{q}" || rawQ == "(q)" || rawQ.contains("{q}")) "" else rawQ
+                val rawScope = entry.arguments?.getString("scope")
+                val initialScope = when (rawScope?.uppercase(java.util.Locale.ROOT)) {
+                    "MOVIES" -> SearchScope.MOVIES
+                    "SERIES" -> SearchScope.SERIES
+                    "CHANNELS" -> SearchScope.CHANNELS
+                    else -> SearchScope.ALL
+                }
                 SearchScreen(
                     initialQuery = initialQuery,
-                    onPlayChannel = { channel -> navController.navigate(Routes.player(channel.id)) },
-                    onPlayMovie = { movie ->
-                        navController.navigate(
-                            Routes.vodPlayer(
-                                key = "movie:${movie.id}",
-                                url = movie.streamUrl,
-                                title = movie.displayTitle,
-                                ua = "OpenTV/0.1 (Android)",
-                            ),
-                        )
+                    initialScope = initialScope,
+                    onPlayChannel = { channel ->
+                        if (licenseManager.licenseStatus.value is LicenseManager.LicenseStatus.Expired) {
+                            navController.navigate(Routes.DEVICE_LICENSE)
+                        } else {
+                            navController.navigate(Routes.player(channel.id))
+                        }
                     },
-                    onOpenSeries = { series -> navController.navigate(Routes.seriesDetail(series.id)) },
+                    onPlayMovie = { movie ->
+                        if (licenseManager.licenseStatus.value is LicenseManager.LicenseStatus.Expired) {
+                            navController.navigate(Routes.DEVICE_LICENSE)
+                        } else {
+                            navController.navigate(Routes.movieDetail(movie.id))
+                        }
+                    },
+                    onOpenSeries = { series ->
+                        if (licenseManager.licenseStatus.value is LicenseManager.LicenseStatus.Expired) {
+                            navController.navigate(Routes.DEVICE_LICENSE)
+                        } else {
+                            navController.navigate(Routes.seriesDetail(series.id))
+                        }
+                    },
                     onBack = { navController.popBackStack() },
                 )
             }
@@ -693,7 +725,7 @@ private fun GeceIptvApp(isTelevision: Boolean) {
                     onOpenSync = { navController.navigate(Routes.SYNC) },
                     onOpenRecordings = { navController.navigate(Routes.REC_SETTINGS) },
                     onOpenProfiles = { navController.navigate(Routes.PROFILES) },
-                    onOpenSearch = { navController.navigate(Routes.SEARCH) },
+                    onOpenSearch = { navController.navigate(Routes.search()) },
                     onOpenLicense = { navController.navigate(Routes.DEVICE_LICENSE) },
                     onOpenAbout = { navController.navigate(Routes.ABOUT) },
                     onBack = { navController.popBackStack() },

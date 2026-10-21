@@ -87,6 +87,7 @@ enum class SearchScope {
 @Composable
 fun SearchScreen(
     initialQuery: String = "",
+    initialScope: SearchScope = SearchScope.ALL,
     onPlayChannel: (Channel) -> Unit,
     onPlayMovie: (Movie) -> Unit,
     onOpenSeries: (Series) -> Unit,
@@ -94,8 +95,11 @@ fun SearchScreen(
     viewModel: ChannelsViewModel = viewModel(),
     vodViewModel: VodViewModel = viewModel(),
 ) {
-    var query by remember(initialQuery) { mutableStateOf(initialQuery) }
-    var selectedScope by remember { mutableStateOf(SearchScope.ALL) }
+    val cleanInitialQuery = remember(initialQuery) {
+        if (initialQuery == "{q}" || initialQuery == "(q)" || initialQuery.contains("{q}") || initialQuery.isBlank()) "" else initialQuery
+    }
+    var query by remember(cleanInitialQuery) { mutableStateOf(cleanInitialQuery) }
+    var selectedScope by remember(initialScope) { mutableStateOf(initialScope) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val isTvPaired = remember { TvCastHelper.isTvPaired(context) }

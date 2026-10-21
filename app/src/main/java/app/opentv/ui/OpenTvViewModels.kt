@@ -61,6 +61,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -336,8 +337,11 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
 
-            // Background: the guide. Movies/series are pulled on demand from their own tabs, so
-            // nothing the user hasn't asked for ever blocks the channels they can already watch.
+            // Background: movies, series and the guide.
+            runCatching {
+                graph.catalogRepository.syncVod(saved, now, force = true)
+            }.onFailure { Log.w("OpenTV", "Background VOD sync failed", it) }
+
             runCatching {
                 val summary = StatusBus.during("Building the TV guide…") {
                     graph.epgRepository.syncAll(now)
@@ -1380,15 +1384,14 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
     private val _vodLoading = MutableStateFlow(false)
     val vodLoading: StateFlow<Boolean> = _vodLoading.asStateFlow()
 
-    @Volatile private var vodRequested = false
+    private var vodSyncJob: Job? = null
 
     /** How long a fetched VOD catalogue is trusted before a warm launch re-syncs it. */
     private val VOD_TTL_MILLIS = 12L * 60 * 60 * 1000  // 12 hours
 
     fun ensureVodLoaded() {
-        if (vodRequested) return
-        vodRequested = true
-        viewModelScope.launch { syncVodIfStale(force = false) }
+        if (vodSyncJob?.isActive == true) return
+        vodSyncJob = viewModelScope.launch { syncVodIfStale(force = false) }
     }
 
     /**
@@ -1397,42 +1400,47 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
      * before the TTL lapses.
      */
     fun refreshVod() {
-        vodRequested = true
-        viewModelScope.launch { syncVodIfStale(force = true) }
+        vodSyncJob?.cancel()
+        vodSyncJob = viewModelScope.launch { syncVodIfStale(force = true) }
     }
 
     private suspend fun syncVodIfStale(force: Boolean) {
         val now = System.currentTimeMillis()
+        val enabledSources = runCatching { graph.sourceRepository.enabled() }.getOrDefault(emptyList())
+        if (enabledSources.isEmpty()) return
 
-        // Warm-launch fast path. The catalogue is persisted in Room, so once it has been fetched
-        // there is no reason to re-download and re-upsert a 40k-title list on every launch — that
-        // was both the multi-minute "Loading movies & shows…" and the bandwidth hog that starved
-        // the live preview into buffering. When we synced recently and already have rows, skip the
-        // network entirely and just (re)build the home shelves off what is stored.
-        if (!force) {
-            val haveCatalogue = runCatching {
-                graph.catalogRepository.movieCount() + graph.catalogRepository.seriesCount()
-            }.getOrDefault(0) > 0
-            val last = settings.vodSyncedAtMillis
-            val fresh = last > 0 && now - last < VOD_TTL_MILLIS
-            if (haveCatalogue && fresh) {
-                loadHomeFeeds()
-                return
+        // Warm-launch fast path / intelligent sync:
+        // Identify which sources are either never synced, empty, or stale (> 12 hours).
+        val sourcesToSync = if (force) {
+            enabledSources
+        } else {
+            enabledSources.filter { source ->
+                val count = runCatching {
+                    graph.catalogRepository.movieCount(source.id) + graph.catalogRepository.seriesCount(source.id)
+                }.getOrDefault(0)
+                val last = settings.getVodSyncedAtMillis(source.id)
+                val stale = last == 0L || (now - last) >= VOD_TTL_MILLIS
+                count == 0 || stale
             }
         }
 
+        if (sourcesToSync.isEmpty()) {
+            loadHomeFeeds()
+            return
+        }
+
         _vodLoading.value = true
-        val synced = runCatching {
-            for (source in graph.sourceRepository.enabled()) {
-                graph.catalogRepository.syncVod(source, now, force = force)
+        try {
+            for (source in sourcesToSync) {
+                runCatching {
+                    graph.catalogRepository.syncVod(source, now, force = force)
+                }.onFailure { Log.w("VodViewModel", "VOD sync failed for ${source.id}", it) }
             }
-        }.isSuccess
-        _vodLoading.value = false
-        StatusBus.set(null)
-        // Stamp the cache only when the fetch actually succeeded, so a failed sync retries on the
-        // next open instead of being remembered as "fresh" and leaving the user with no catalogue.
-        if (synced) settings.vodSyncedAtMillis = now
-        // The catalogue may have grown — recompute the computed home rows off the fresh data.
+        } finally {
+            _vodLoading.value = false
+            StatusBus.set(null)
+        }
+        settings.vodSyncedAtMillis = now
         loadHomeFeeds()
     }
 

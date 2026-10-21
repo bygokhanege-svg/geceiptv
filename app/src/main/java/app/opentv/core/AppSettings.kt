@@ -609,8 +609,7 @@ class AppSettings private constructor(context: Context) {
         set(value) { prefs.edit().putLong(KEY_VOD_SYNCED_AT, value).apply() }
 
     fun getVodSyncedAtMillis(sourceId: Long): Long {
-        val perSource = prefs.getLong("vod_synced_at_$sourceId", 0L)
-        return if (perSource > 0L) perSource else vodSyncedAtMillis
+        return prefs.getLong("vod_synced_at_$sourceId", 0L)
     }
 
     fun setVodSyncedAtMillis(sourceId: Long, millis: Long) {

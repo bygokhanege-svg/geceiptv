@@ -139,4 +139,28 @@ class M3uParserTest {
         assertThat(result.channels).isEmpty()
         assertThat(result.skippedEntries).isEqualTo(0)
     }
+
+    @Test
+    fun `vod movie entries are separated into movies list`() {
+        val playlist = """
+            #EXTM3U
+            #EXTINF:-1 tvg-id="live1" group-title="TR CANLI",TRT 1 HD
+            http://example.com/live/u/p/1.m3u8
+            #EXTINF:-1 tvg-id="mov1" tvg-logo="http://img/movie.jpg" group-title="TURKCE DUBLAJ FILM",Inception (2010)
+            http://example.com/movie/u/p/123.mp4
+        """.trimIndent()
+
+        val result = M3uParser.parse(playlist, sourceId = 42)
+
+        assertThat(result.channels).hasSize(1)
+        assertThat(result.channels.first().name).isEqualTo("TRT 1 HD")
+
+        assertThat(result.movies).hasSize(1)
+        val movie = result.movies.first()
+        assertThat(movie.name).isEqualTo("Inception (2010)")
+        assertThat(movie.categoryId).isEqualTo("TURKCE DUBLAJ FILM")
+        assertThat(movie.streamUrl).isEqualTo("http://example.com/movie/u/p/123.mp4")
+        assertThat(movie.posterUrl).isEqualTo("http://img/movie.jpg")
+        assertThat(movie.sourceId).isEqualTo(42)
+    }
 }

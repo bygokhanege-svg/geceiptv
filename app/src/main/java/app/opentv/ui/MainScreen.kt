@@ -141,7 +141,7 @@ fun MainScreen(
     onResume: (mediaKey: String, url: String, title: String) -> Unit,
     onAddSource: () -> Unit,
     onRefresh: () -> Unit,
-    onOpenSearch: () -> Unit,
+    onOpenSearch: (scope: String?) -> Unit = {},
     onOpenSettings: () -> Unit,
     onOpenLicense: () -> Unit = onOpenSettings,
     onOpenProfiles: () -> Unit,
@@ -230,7 +230,15 @@ fun MainScreen(
             PhoneTopBar(
                 title = "GECE IPTV",
                 activeProfileName = activeProfileName,
-                onOpenSearch = onOpenSearch,
+                onOpenSearch = {
+                    val scope = when (tab) {
+                        Tab.MOVIES -> "MOVIES"
+                        Tab.SHOWS -> "SERIES"
+                        Tab.LIVE -> "CHANNELS"
+                        else -> null
+                    }
+                    onOpenSearch(scope)
+                },
                 onOpenMultiView = onOpenMultiView,
                 onOpenSettings = onOpenSettings,
                 onOpenProfiles = onOpenProfiles,
@@ -253,7 +261,7 @@ fun MainScreen(
                         onOpenSeries = onOpenSeries,
                         onResume = onResume,
                         onOpenLicense = onOpenLicense,
-                        onOpenSearch = onOpenSearch,
+                        onOpenSearch = { onOpenSearch(null) },
                         onOpenSettings = onOpenSettings,
                         onOpenMultiView = onOpenMultiView,
                         onAddSource = onAddSource,
@@ -274,14 +282,14 @@ fun MainScreen(
                     Tab.MOVIES -> MoviesScreen(
                         onOpenMovie = onOpenMovie,
                         onResume = onResume,
-                        onOpenSearch = onOpenSearch,
+                        onOpenSearch = { onOpenSearch("MOVIES") },
                         hasSources = hasSources,
                         isSyncing = isSyncing,
                     )
                     Tab.SHOWS -> SeriesScreen(
                         onOpenSeries = onOpenSeries,
                         onResume = onResume,
-                        onOpenSearch = onOpenSearch,
+                        onOpenSearch = { onOpenSearch("SERIES") },
                         hasSources = hasSources,
                         isSyncing = isSyncing,
                     )

@@ -68,7 +68,7 @@ class UpdateChecker(
 
                 Update(
                     versionName = release.tagName.trimStart('v', 'V'),
-                    title = release.name.ifBlank { release.tagName },
+                    title = fixMojibake(release.name.ifBlank { release.tagName }),
                     notes = cleanNotes(release.body),
                     apkUrl = asset.browserDownloadUrl,
                     apkSizeBytes = asset.size,
@@ -83,6 +83,52 @@ class UpdateChecker(
         const val REPO_SLUG = "bygokhanege-svg/geceiptv"
 
         /**
+         * Repairs Turkish and Latin character mojibake caused by UTF-8 bytes being decoded
+         * as ISO-8859-1 or Windows-1252/1254 during release uploads.
+         */
+        fun repairTurkishMojibake(s: String): String {
+            var text = s
+            text = text
+                .replace("Ä±", "ı")
+                .replace("Ä°", "İ")
+                .replace("ÅŸ", "ş")
+                .replace("Åž", "Ş")
+                .replace("Ã§", "ç")
+                .replace("Ã‡", "Ç")
+                .replace("Ã¶", "ö")
+                .replace("Ã–", "Ö")
+                .replace("Ã¼", "ü")
+                .replace("Ãœ", "Ü")
+                .replace("ÄŸ", "ğ")
+                .replace("Äž", "Ğ")
+                .replace("Ã¢", "â")
+                .replace("Ã®", "î")
+                .replace("Ã»", "û")
+                .replace("Ã©", "é")
+                .replace("ğŸŽ®", "🎮")
+                .replace("âŒ¨ï¸", "⌨️")
+                .replace("ğŸŒ", "🌐")
+                .replace("âš¡", "⚡")
+                .replace("ğŸ”", "🔍")
+                .replace("ğŸ—‘ï¸", "🗑️")
+            return text
+        }
+
+        fun fixMojibake(raw: String): String {
+            var text = repairTurkishMojibake(raw)
+            if (text.contains("Ã") || text.contains("Ä") || text.contains("Å")) {
+                runCatching {
+                    val bytes = text.toByteArray(Charsets.ISO_8859_1)
+                    val candidate = String(bytes, Charsets.UTF_8)
+                    if (!candidate.contains('\uFFFD') && candidate.length < text.length) {
+                        text = candidate
+                    }
+                }
+            }
+            return text
+        }
+
+        /**
          * The GitHub release body is written for developers and has GitHub's auto-generated
          * commit list appended. Turn it into a few clean "what's new" lines for the update
          * dialog: drop the build/verify/signing boilerplate and the auto-changelog, and flatten
@@ -90,7 +136,7 @@ class UpdateChecker(
          * If nothing user-facing is left, returns empty and the dialog simply omits the notes.
          */
         fun cleanNotes(raw: String): String {
-            var text = raw
+            var text = fixMojibake(raw)
             // Everything from the first boilerplate / auto-generated marker onward is noise.
             val cutFrom = listOf(
                 "Built by GitHub Actions",

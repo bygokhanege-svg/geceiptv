@@ -6,6 +6,7 @@
 package app.opentv.data.parser
 
 import app.opentv.data.model.Channel
+import app.opentv.data.model.Movie
 import java.io.BufferedReader
 import java.io.InputStream
 
@@ -25,6 +26,7 @@ object M3uParser {
 
     data class Result(
         val channels: List<Channel>,
+        val movies: List<Movie> = emptyList(),
         /** Value of `url-tvg`/`x-tvg-url` on the #EXTM3U header, if the playlist declares one. */
         val declaredEpgUrl: String?,
         val skippedEntries: Int,
@@ -38,6 +40,7 @@ object M3uParser {
 
     fun parse(reader: BufferedReader, sourceId: Long): Result {
         val channels = ArrayList<Channel>()
+        val movies = ArrayList<Movie>()
         val seenStreamIds = HashSet<String>()
         var declaredEpgUrl: String? = null
         var skipped = 0
@@ -85,18 +88,38 @@ object M3uParser {
                         // first and drop later duplicates rather than letting them collide on
                         // the unique index and abort the whole import.
                         if (seenStreamIds.add(streamId)) {
-                            channels += Channel(
-                                sourceId = sourceId,
-                                streamId = streamId,
-                                name = name,
-                                categoryId = attributes["group-title"]?.takeIf { it.isNotBlank() },
-                                logoUrl = (attributes["tvg-logo"] ?: attributes["logo"])
-                                    ?.takeIf { it.isNotBlank() },
-                                epgChannelId = attributes["tvg-id"]?.takeIf { it.isNotBlank() },
-                                number = pendingNumber,
-                                streamUrl = line,
-                                sortIndex = index++,
-                            )
+                            val groupTitle = attributes["group-title"]?.takeIf { it.isNotBlank() }
+                            val logo = (attributes["tvg-logo"] ?: attributes["logo"])?.takeIf { it.isNotBlank() }
+
+                            if (isVodStream(line, groupTitle)) {
+                                val ext = line.substringBefore('?').substringAfterLast('.', "").takeIf { it.length in 2..4 }
+                                movies += Movie(
+                                    sourceId = sourceId,
+                                    streamId = streamId,
+                                    name = name,
+                                    categoryId = groupTitle,
+                                    posterUrl = logo,
+                                    rating = null,
+                                    year = null,
+                                    plot = null,
+                                    durationSeconds = null,
+                                    containerExtension = ext,
+                                    streamUrl = line,
+                                    addedMillis = System.currentTimeMillis(),
+                                )
+                            } else {
+                                channels += Channel(
+                                    sourceId = sourceId,
+                                    streamId = streamId,
+                                    name = name,
+                                    categoryId = groupTitle,
+                                    logoUrl = logo,
+                                    epgChannelId = attributes["tvg-id"]?.takeIf { it.isNotBlank() },
+                                    number = pendingNumber,
+                                    streamUrl = line,
+                                    sortIndex = index++,
+                                )
+                            }
                         }
                     }
                     pendingName = null
@@ -106,7 +129,22 @@ object M3uParser {
             }
         }
 
-        return Result(channels, declaredEpgUrl, skipped)
+        return Result(channels, movies, declaredEpgUrl, skipped)
+    }
+
+    private fun isVodStream(url: String, groupTitle: String?): Boolean {
+        val u = url.lowercase()
+        val g = groupTitle?.uppercase() ?: ""
+        if (u.contains("/movie/") || u.contains("/series/")) return true
+        if (u.endsWith(".mp4") || u.endsWith(".mkv") || u.endsWith(".avi")) {
+            if (!u.contains("/live/")) return true
+        }
+        if (g.contains("FILM") || g.contains("MOVIE") || g.contains("VOD") || g.contains("CINEMA") || g.contains("SİNEMA") || g.contains("DIZI") || g.contains("DİZİ") || g.contains("SERIES")) {
+            if (!g.contains("CANLI") && !g.contains("LIVE") && !g.contains("KANAL") && !g.contains("CHANNEL") && !g.contains("TV")) {
+                return true
+            }
+        }
+        return false
     }
 
     /**

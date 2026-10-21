@@ -222,6 +222,52 @@
     * Kategori ve Kanal Eylemleri (`category_action_*`, `channel_action_*`): Aç, gizle, iptal, toast bildirimleri.
   * **Sürüm Yayınlama:** `app/build.gradle.kts` içinde `versionCode = 30`, `versionName = "0.12.09"` yapıldı.
 
+### 17. Arama İyileştirmeleri & Ayrı Arama Fonksiyonları
+* **Kullanıcı İstekleri:**
+  1. Arama ekranında çıkan (q) yazısının kaldırılması.
+  2. Film, dizi ve kanal aramalarının ayrı ayrı yapılabilmesi veya filtrelenebilmesi; arama fonksiyonunun eksiksiz çalıştığının doğrulanması.
+* **Teknik Çözüm ve Kararlar:**
+  * `SearchScreen.kt`: Arama çubuğundaki hatalı `(q)` etiketi ve metinleri kaldırıldı; Türkçe ve İngilizce düzgün placeholder yerleştirildi.
+  * Arama kategorileri Live TV, Movies ve Series olarak filtreleme sekmeleriyle ayrıldı.
+  * `CatalogRepository.kt`: Türkçe harf duyarlılığı için `expandQueryVariants` (ı/i, ğ/g, ü/u, ş/s, ö/o, ç/c) varyant üretimi eklendi.
+
+---
+
+### 18. Sağlayıcı Kaydında VOD (Film, Dizi, Vitrin) Senkronizasyonunun Onarılması
+* **Kullanıcı İstekleri:**
+  * Sağlayıcı kaydedildiğinde canlı TV kanalları yükleniyor ancak filmler, diziler ve vitrin yüklenmiyor; başka oynatıcılarda bunların listelendiği, VOD kısmındaki sorunun düzeltilmesi istendi.
+* **Kök Nedenler ve Teknik Çözümler:**
+  1. **Arka Plan VOD Tetiklemesi Eksikliği (`SourcesViewModel.kt`):**
+     * Sağlayıcı eklendiğinde `saveAndSync` yalnızca canlı kanalları ve EPG rehberini çekiyordu; arka plan VOD senkronizasyonu başlatılmıyordu.
+     * `onDone(true)` hemen sonrasında arka planda `catalogRepository.syncVod(saved, now, force = true)` çağrısı eklendi.
+  2. **Xtream Sunucu Bağlantı Limiti Çakışması (`CatalogRepository.kt`):**
+     * `syncXtreamVod` metodu 4 ayrı API isteğini (`movieCategories`, `movies`, `seriesCategories`, `series`) `async(Dispatchers.IO)` ile aynı anda gönderiyordu. `max_connections = 1` limitine veya rate-limit'e sahip Xtream sunucuları eşzamanlı istekleri reddediyor (403/429) ve filmler boş dönüyordu.
+     * İstekler sıralı (sequential) hale getirildi: `movieCategories` -> `movies` (parçalı Room ekleme ve `StatusBus` yüzdesi) -> `seriesCategories` -> `series`.
+  3. **M3U VOD Desteği (`M3uParser.kt`, `CatalogRepository.kt`):**
+     * `M3uParser` içine VOD akış algılama (`.mp4`, `.mkv`, `/movie/`, VOD grup başlıkları) eklendi ve `movies` listesi ayrıştırıldı.
+     * `syncM3u` metoduna bu filmleri ve kategorilerini Room veritabanına ekleme desteği entegre edildi.
+  4. **Önbellek & Zaman Damgası Karışıklığı (`AppSettings.kt`):**
+     * `getVodSyncedAtMillis(sourceId)` yeni eklenen kaynaklarda (timestamp = 0 iken) global `vodSyncedAtMillis` değerine düşüyordu; bu da yeni kaynağın zaten senkronize edildiği yanılsamasına yol açıyordu. Kaynak bazlı salt anahtar kontrolüne dönüştürüldü.
+  5. **`VodViewModel` Kilitlenmesi ve Kaynak Başına Kontrol:**
+     * `@Volatile private var vodRequested = false` tek seferlik kilit bayrağı kaldırılarak `vodSyncJob` ile yönetildi.
+     * `syncVodIfStale` içinde genel veritabanı yerine her aktif kaynak tek tek kontrol edildi; `movieCount(id) + seriesCount(id) == 0` veya zaman aşımı olan kaynaklar otomatik olarak senkronize edildi.
+  6. **Vitrin (DashboardScreen) Tetiklemesi:**
+     * `DashboardScreen.kt` içerisine `LaunchedEffect(hasSources)` eklenerek kaynaklar aktif olduğunda `ensureVodLoaded()` ve `loadHomeFeeds()` otomatik olarak çalıştırıldı.
+
+### 19. Otomatik Açılış Sürüm Kontrolü, Güncelleme Notları Türkçe Karakter Onarımı & v0.12.10
+* **Kullanıcı İstekleri:**
+  1. Uygulama açılınca otomatik sürüm kontrolü yapılması; yeni sürüm çıktığında kullanıcıya bilgi verilmesi ve kullanıcı isterse indirebilmesi.
+  2. Sürüm güncelleme notlarındaki Türkçe karakter bozulmalarının (mojibake) çözülmesi.
+  3. Projenin derlenip (build alınıp) GitHub'a release olarak yüklenmesi.
+* **Teknik Çözüm ve Kararlar:**
+  * **Açılışta Sürüm Kontrolü (`UpdateScreen.kt`, `UpdateViewModel`):**
+    * 6 saatlik engelleyici kısıtlama (`CHECK_INTERVAL_MS`) yerine uygulama açıldığında UI yerleşiminin hemen ardından (1.2 saniye gecikmeyle arka planda) `checkOnLaunch()` çalıştırıldı.
+    * Yeni sürüm varsa ekranda D-pad odaklanabilir, TV ve telefon uyumlu `UpdateGate` modal penceresi ("Şimdi Güncelle" / "Daha Sonra") belirir. Kullanıcı onayladığında yüzdelik ilerleme çubuğuyla indirilir ve sistem paket yükleyicisine aktarılır.
+  * **Güncelleme Notları Türkçe Karakter Düzeltmesi (`UpdateChecker.kt`):**
+    * GitHub API'den gelen veya PowerShell yükleme sürecinde ISO-8859-1 / Windows-1254 dönüşümüne uğrayan çift kodlanmış mojibake karakterleri (`Ä±` -> `ı`, `Ä°` -> `İ`, `ÅŸ` -> `ş`, `Ã§` -> `ç`, `Ã¶` -> `ö`, `Ã¼` -> `ü`, `ÄŸ` -> `ğ`, `Ã‡` -> `Ç`, `Ã–` -> `Ö`, `Ãœ` -> `Ü`, `Äž` -> `Ğ`, `Åž` -> `Ş` ve bozuk emoji dizilimleri) `repairTurkishMojibake` ve `fixMojibake` algoritmalarıyla tamamen onarıldı.
+  * **Birim Testleri (`UpdateCheckerTest.kt`):** Sürüm karşılaştırma ve Türkçe karakter düzeltme testleri başarıyla doğrulandı.
+  * **Sürüm Güncelleme & Release:** `app/build.gradle.kts` içinde `versionCode = 31`, `versionName = "0.12.10"` olarak güncellendi, `GECEiptv-release.apk` derlendi ve GitHub Release `v0.12.10` olarak yüklendi.
+
 ---
 
 ## 📌 Hızlı Referans & Mimari Kurallar
