@@ -369,7 +369,7 @@ fun VodPlayerScreen(
         } else {
             movieName ?: currentTitle
         }
-        subtitleSearchMessage = "Çoklu kaynaklardan aranıyor: $searchTitle..."
+        subtitleSearchMessage = context.getString(R.string.vod_sub_searching)
         scope.launch {
             val enabledProviders = mutableListOf<String>()
             if (graph.settings.providerOpenSubtitles.value) enabledProviders += "OpenSubtitles v3"
@@ -388,9 +388,9 @@ fun VodPlayerScreen(
             onlineSubtitles = results
             isSearchingSubtitles = false
             subtitleSearchMessage = if (results.isEmpty()) {
-                "Altyazı bulunamadı (\"$searchTitle\")"
+                context.getString(R.string.vod_sub_not_found, searchTitle)
             } else {
-                "${results.size} altyazı bulundu"
+                context.getString(R.string.vod_sub_found, results.size)
             }
         }
     }
@@ -819,14 +819,14 @@ fun VodPlayerScreen(
                         vodPanel = if (vodPanel == VodPanel.QUALITY) VodPanel.NONE else VodPanel.QUALITY
                         interaction++
                     }
-                    VodChip(Icons.Filled.Tv, "Harici Oynatıcı") {
+                    VodChip(Icons.Filled.Tv, stringResource(R.string.vod_external_player)) {
                         launchExternalPlayer()
                         interaction++
                     }
                     if (nextEpisodePromptEnabled && nextEpisode != null) {
                         VodChip(
                             icon = Icons.Filled.SkipNext,
-                            label = "Sonraki Bölüm (S${nextEpisode!!.season}E${nextEpisode!!.episodeNumber})",
+                            label = stringResource(R.string.vod_next_episode_tag, nextEpisode!!.season, nextEpisode!!.episodeNumber),
                         ) {
                             playNextEpisode()
                             interaction++
@@ -918,6 +918,7 @@ private fun TrackPanel(
     onClearOnlineSubtitle: () -> Unit = {},
     onDone: () -> Unit,
 ) {
+    val context = LocalContext.current
     var subTab by remember { mutableStateOf(0) } // 0 = Tracks & Search, 1 = Smart Sync
     val options = mutableListOf<Triple<String, Boolean, () -> Unit>>()
 
@@ -935,7 +936,7 @@ private fun TrackPanel(
                 for (i in 0 until group.length) {
                     val format = group.getTrackFormat(i)
                     val isSelected = selectedOnlineSubId == null && group.isTrackSelected(i)
-                    options += Triple(vodTextTrackLabel(format.label, format.language, options.size), isSelected) {
+                    options += Triple(vodTextTrackLabel(context, format.label, format.language, options.size), isSelected) {
                         onClearOnlineSubtitle()
                         controller.selectTrack(group, i)
                         onDone()
@@ -944,7 +945,7 @@ private fun TrackPanel(
             }
 
             // Online subtitle search option
-            val searchBtnLabel = if (isSearchingSubtitles) "⏳ Çoklu Kaynaktan Aranıyor..." else "🌐 Çoklu Çevrimiçi Altyazı Ara (OpenSubtitles + TheSubtitleDB)"
+            val searchBtnLabel = if (isSearchingSubtitles) stringResource(R.string.vod_sub_searching) else stringResource(R.string.vod_sub_search_btn)
             options += Triple(searchBtnLabel, false) {
                 onSearchOnlineSubtitles()
             }
@@ -965,7 +966,7 @@ private fun TrackPanel(
             audioGroups.forEach { group ->
                 for (i in 0 until group.length) {
                     val format = group.getTrackFormat(i)
-                    options += Triple(vodAudioTrackLabel(format, options.size), group.isTrackSelected(i)) {
+                    options += Triple(vodAudioTrackLabel(context, format, options.size), group.isTrackSelected(i)) {
                         controller.selectTrack(group, i); onDone()
                     }
                 }
@@ -1029,13 +1030,13 @@ private fun TrackPanel(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 SubPanelTabButton(
-                    label = "📋 Altyazı Seçimi",
+                    label = stringResource(R.string.vod_sub_tab_selection),
                     selected = subTab == 0,
                     onClick = { subTab = 0 },
                     modifier = Modifier.weight(1f),
                 )
                 SubPanelTabButton(
-                    label = "⚡ Akıllı Senkron",
+                    label = stringResource(R.string.vod_sub_tab_sync),
                     selected = subTab == 1,
                     onClick = { subTab = 1 },
                     modifier = Modifier.weight(1f),
@@ -1064,11 +1065,11 @@ private fun TrackPanel(
                 // Current Offset Status Display
                 val offsetSec = currentOffsetMs / 1000f
                 val statusText = if (currentOffsetMs == 0L) {
-                    "0.00s (Tam Eşit)"
+                    stringResource(R.string.vod_sub_sync_exact)
                 } else if (currentOffsetMs > 0L) {
-                    "+%.2fs (Altyazı Geciktirildi)".format(offsetSec)
+                    stringResource(R.string.vod_sub_sync_delayed, offsetSec)
                 } else {
-                    "%.2fs (Altyazı Öne Alındı)".format(offsetSec)
+                    stringResource(R.string.vod_sub_sync_advanced, offsetSec)
                 }
 
                 Box(
@@ -1089,7 +1090,7 @@ private fun TrackPanel(
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            text = "SENKRONİZASYON FARKI",
+                            text = stringResource(R.string.vod_sub_sync_diff),
                             style = MaterialTheme.typography.labelSmall,
                             color = Color.White.copy(alpha = 0.6f),
                         )
@@ -1105,7 +1106,7 @@ private fun TrackPanel(
                 Spacer(Modifier.height(10.dp))
 
                 Text(
-                    text = "Hızlı Zaman Ayarı",
+                    text = stringResource(R.string.vod_sub_quick_adjust),
                     style = MaterialTheme.typography.labelMedium,
                     color = Color.White.copy(alpha = 0.7f),
                 )
@@ -1117,7 +1118,7 @@ private fun TrackPanel(
                 ) {
                     SyncActionButton("-1.0s", modifier = Modifier.weight(1f)) { onAdjustSyncOffset(-1000L) }
                     SyncActionButton("-0.25s", modifier = Modifier.weight(1f)) { onAdjustSyncOffset(-250L) }
-                    SyncActionButton("0.0s Sıfırla", modifier = Modifier.weight(1.3f)) { onResetSyncOffset() }
+                    SyncActionButton(stringResource(R.string.vod_sub_reset_sync), modifier = Modifier.weight(1.3f)) { onResetSyncOffset() }
                     SyncActionButton("+0.25s", modifier = Modifier.weight(1f)) { onAdjustSyncOffset(250L) }
                     SyncActionButton("+1.0s", modifier = Modifier.weight(1f)) { onAdjustSyncOffset(1000L) }
                 }
@@ -1125,7 +1126,7 @@ private fun TrackPanel(
                 Spacer(Modifier.height(12.dp))
 
                 Text(
-                    text = "Akıllı Hazır Kalibrasyonlar",
+                    text = stringResource(R.string.vod_sub_smart_presets),
                     style = MaterialTheme.typography.labelMedium,
                     color = Color.White.copy(alpha = 0.7f),
                 )
@@ -1253,21 +1254,21 @@ private fun TrackRow(label: String, selected: Boolean, onClick: () -> Unit, focu
     }
 }
 
-private fun vodTextTrackLabel(label: String?, language: String?, index: Int): String {
+private fun vodTextTrackLabel(context: android.content.Context, label: String?, language: String?, index: Int): String {
     if (!label.isNullOrBlank()) return label
     if (!language.isNullOrBlank() && language != "und") {
         return runCatching { java.util.Locale(language).displayLanguage.ifBlank { language } }.getOrDefault(language)
     }
-    return "Track ${index + 1}"
+    return context.getString(R.string.vod_track_num, index + 1)
 }
 
-private fun vodAudioTrackLabel(format: androidx.media3.common.Format, index: Int): String {
+private fun vodAudioTrackLabel(context: android.content.Context, format: androidx.media3.common.Format, index: Int): String {
     val lang = if (!format.language.isNullOrBlank() && format.language != "und") {
         runCatching { java.util.Locale(format.language!!).displayLanguage.ifBlank { format.language!! } }.getOrDefault(format.language!!)
     } else if (!format.label.isNullOrBlank()) {
         format.label!!
     } else {
-        "Ses ${index + 1}"
+        context.getString(R.string.vod_audio_num, index + 1)
     }
 
     val codec = when {
@@ -1388,7 +1389,7 @@ private fun NextEpisodeFloatingCard(
                     )
                     Spacer(Modifier.width(3.dp))
                     Text(
-                        text = "SONRAKİ BÖLÜM",
+                        text = stringResource(R.string.vod_next_episode_title),
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.ExtraBold,
                         color = MaterialTheme.colorScheme.primary,

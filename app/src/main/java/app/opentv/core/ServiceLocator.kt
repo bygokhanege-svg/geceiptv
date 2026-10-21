@@ -121,6 +121,9 @@ object ServiceLocator {
                 stalkerApi = stalkerApi,
                 http = httpClient,
                 settings = settings,
+                epgFeedDao = database.epgFeeds(),
+                programmeDao = database.programmes(),
+                aliasDao = database.epgAliases(),
             )
         }
 
@@ -161,6 +164,12 @@ object ServiceLocator {
                 catalog = catalogRepository,
                 settings = settings,
                 sourceRepository = sourceRepository,
+            )
+        }
+
+        val virtualMouseServer: app.opentv.pairing.VirtualMouseServer by lazy {
+            app.opentv.pairing.VirtualMouseServer(
+                scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO),
             )
         }
     }

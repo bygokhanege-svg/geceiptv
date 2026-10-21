@@ -872,13 +872,13 @@ fun HomeScreen(
                             }
                         }
                     }
-                    RecordActionRow("👁️ Kanalı Listede Gizle") {
+                    RecordActionRow(stringResource(R.string.channel_action_hide)) {
                         val rowToHide = menuRow
                         channelMenu = null
                         recordScope.launch {
                             rowToHide.variants.forEach { v -> graph.catalogRepository.setChannelHidden(v.id, true) }
                         }
-                        Toast.makeText(context, "${channel.shownName} listede gizlendi", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, context.getString(R.string.channel_action_hidden_toast, channel.shownName), Toast.LENGTH_SHORT).show()
                     }
                     RecordActionRow(stringResource(R.string.common_cancel)) { channelMenu = null }
                 }
@@ -906,30 +906,30 @@ fun HomeScreen(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "Kategori Grubu Seçenekleri",
+                    text = stringResource(R.string.category_action_options),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(18.dp))
 
                 // Seçenek 1: Aç
-                RecordActionRow("▶ Aç", primary = true) {
+                RecordActionRow(stringResource(R.string.category_action_open), primary = true) {
                     viewModel.selectCategory(group.key)
                     categoryGroupToManage = null
                 }
 
                 // Seçenek 2: Gizle
-                RecordActionRow("👁️ Gizle") {
+                RecordActionRow(stringResource(R.string.category_action_hide)) {
                     if (selectedCategory == group.key) {
                         viewModel.selectCategory(null)
                     }
                     viewModel.setGroupHidden(group, true)
-                    Toast.makeText(context, "${group.label} grubu gizlendi", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.category_action_hidden_toast, group.label), Toast.LENGTH_SHORT).show()
                     categoryGroupToManage = null
                 }
 
                 // Seçenek 3: İptal
-                RecordActionRow("İptal") {
+                RecordActionRow(stringResource(R.string.common_cancel)) {
                     categoryGroupToManage = null
                 }
             }

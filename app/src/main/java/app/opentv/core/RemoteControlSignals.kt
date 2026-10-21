@@ -35,6 +35,10 @@ object RemoteControlSignals {
         data class Number(val digit: Int) : RemoteCommand
         data class SearchText(val query: String) : RemoteCommand
         data class PlayChannel(val channelId: Long) : RemoteCommand
+        object MouseClick : RemoteCommand
+        object MouseBack : RemoteCommand
+        object MouseActivate : RemoteCommand
+        object MouseHide : RemoteCommand
     }
 
     private val _commands = MutableSharedFlow<RemoteCommand>(extraBufferCapacity = 32)

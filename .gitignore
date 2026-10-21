@@ -19,3 +19,6 @@ tools/
 
 # Kotlin compiler transient logs
 .kotlin/
+.vscode/
+iptv.txt
+iptvtara/

@@ -92,6 +92,7 @@ class ManagerServer(
     private var token: String = ""
     @Volatile private var running = false
     @Volatile private var lastActivityMillis = 0L
+    @Volatile var isSearchActive = false
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
@@ -105,22 +106,18 @@ class ManagerServer(
             return
         }
 
-        val random = SecureRandom()
-        // A short token, not a long one, so the "camera won't scan the QR?" fallback URL the TV
-        // shows is actually typeable into a laptop browser. It only gates a LAN-only, private-IP-only
-        // server on a random high port that closes on idle and is shown solely on this TV screen, so
-        // ~40 bits is ample — brute-forcing it on the local network inside the session window isn't
-        // realistic.
-        token = ByteArray(5).also(random::nextBytes).joinToString("") { "%02x".format(it) }
+        token = settings.getOrCreateManagerToken()
 
         val socket = try {
-            // Port 0 asks the OS for a free one. A fixed port would be predictable and would
-            // clash with whatever else the user runs at home.
-            ServerSocket(0)
-        } catch (e: Exception) {
-            Log.w(TAG, "Could not open a socket", e)
-            _state.value = State.Failed("Could not start the channel manager on this device.")
-            return
+            ServerSocket(DEFAULT_PORT)
+        } catch (_: Exception) {
+            try {
+                ServerSocket(0)
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not open a socket", e)
+                _state.value = State.Failed("Could not start the channel manager on this device.")
+                return
+            }
         }
 
         serverSocket = socket
@@ -202,6 +199,14 @@ class ManagerServer(
 
         if (method == "OPTIONS") {
             output.write(PairingHttp.corsOptionsResponse())
+            return
+        }
+
+        if (method == "GET" && path == "/ping") {
+            lastActivityMillis = System.currentTimeMillis()
+            val supplied = query["t"] ?: ""
+            val isTokenValid = token.isNotEmpty() && PairingHttp.secretsMatch(supplied, token)
+            output.write(PairingHttp.httpResponse("200 OK", "application/json", """{"ok":true,"app":"GECE IPTV","tv":true,"validToken":$isTokenValid,"isSearch":$isSearchActive}"""))
             return
         }
 
@@ -530,6 +535,10 @@ class ManagerServer(
             "search" -> {
                 req.value?.let { RemoteControlSignals.send(RemoteControlSignals.RemoteCommand.SearchText(it)) }
             }
+            "mouse_click" -> RemoteControlSignals.send(RemoteControlSignals.RemoteCommand.MouseClick)
+            "mouse_back" -> RemoteControlSignals.send(RemoteControlSignals.RemoteCommand.MouseBack)
+            "mouse_activate" -> RemoteControlSignals.send(RemoteControlSignals.RemoteCommand.MouseActivate)
+            "mouse_hide" -> RemoteControlSignals.send(RemoteControlSignals.RemoteCommand.MouseHide)
         }
         output.write(PairingHttp.httpResponse("200 OK", "application/json", """{"ok":true}"""))
     }
@@ -551,10 +560,11 @@ class ManagerServer(
         }
     }
 
-    private companion object {
+    companion object {
         const val TAG = "ManagerServer"
+        const val DEFAULT_PORT = 8765
         const val SOCKET_TIMEOUT_MILLIS = 15_000
-        const val IDLE_TIMEOUT_MINUTES = 30L
+        const val IDLE_TIMEOUT_MINUTES = 24 * 60L // Keep alive while app is active, 24h fallback
 
         // Generous next to pairing's 16 KB: a /reorder body carries every channel id in a
         // category, which can be a few thousand on a big provider.

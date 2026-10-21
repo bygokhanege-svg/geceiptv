@@ -152,6 +152,76 @@
   * **StatusBus Güvenliği:** `syncXtreamVod` `try-finally` bloğuna alınarak, herhangi bir iptal veya hatada ekranın altında takılı kalan mesajların anında temizlenmesi (`StatusBus.set(null)`) sağlandı.
   * **Sürüm Güncelleme:** `app/build.gradle.kts` içinde `versionCode = 28`, `versionName = "0.12.07"` yapıldı.
 
+### 14. Sağlayıcı Buton Sıralaması, Arama Harf Büyütme/Kapsam Filtresi, EPG Temizliği & Akıllı Kumanda Ergonomisi (v0.12.08)
+* **Kullanıcı İstekleri:**
+  1. **Sağlayıcı Buton Sıralaması:** Ayarlar > Sağlayıcılar ekranında Hız Testi, Düzenle, Kaldır butonları ile Otomatik, HLS (.m3u8), MPEG-TS (.ts) butonlarının yer değiştirmesi (sık kullanılan format butonları daha kolay erişilebilir olsun).
+  2. **Arama Ekranı İyileştirmeleri:** Ekran klavyesine küçük/büyük harf (`a/A`) butonu eklenmesi; arama yapılacak yerin kullanıcı tarafından seçilebilmesi (Tümü, Canlı TV, Filmler, Diziler kapsam filtreleri).
+  3. **EPG Rehber Otomatik Temizliği:** Bir sağlayıcı kaldırıldığında TV rehberi (EPG) bölümünde kalan sağlayıcıya ait feed'lerin ve eşleşmelerin otomatik silinmesi, döngü/bug risklerinin önlenmesi.
+  4. **Kumanda Otomatik Eşitlemeyi Kaldırma:** Telefonla TV eşleştiğinde otomatik sağlayıcı eşitlemenin kaldırılması; eşitlemenin yalnızca "Sağlayıcıları Eşitle" butonuna basıldığında manuel yapılması (bağlanma anındaki yavaşlığı ve takılmayı önler).
+  5. **Yerel Ağda Otomatik Bağlanma:** Bir kez eşleşen telefon ve TV, iki tarafta da uygulama açıksa aynı ağ (Wi-Fi) üzerinden otomatik olarak bağlansın; sürekli QR okutma veya IP girme zorunluluğu kalksın.
+  6. **Ergonomik Kumanda Düzeni:** Telefondaki kumandanın joystick yuvarlağı (D-pad) daha aşağıda, sağ el baş parmağın rahatça ulaşabileceği yerde olsun; solunda SES tuşları, sağında KANAL tuşları yer alsın; kumanda daha derli toplu ve pratik hale getirilsin.
+* **Teknik Çözüm ve Kararlar:**
+  * **Sağlayıcı Format Butonları Önceliği (`ProvidersScreen.kt`):** Hem TV hem mobil arayüzde Otomatik, HLS, MPEG-TS format butonları en başa (üst sıraya), Test, Düzenle ve Kaldır butonları ikinci sıraya taşındı.
+  * **Arama Ekranı Klavyesi & Kapsamlar (`SearchScreen.kt`, `OnScreenKeyboard.kt`):**
+    * Sanal klavyeye `a/A` Caps/Shift butonu eklendi, harflerin dinamik büyük/küçük harf dönüşümü sağlandı.
+    * `SearchScope` (`ALL`, `LIVE`, `MOVIES`, `SERIES`) filtre çipleri eklendi; sonuç sayıları gerçek zamanlı filtrelendi.
+  * **EPG Beslemelerini Otomatik Kaldırma (`EpgRepository.kt`, `CatalogRepository.kt`):** `deleteSources()` içine `epgRepository.removeFeedsForSource(id)` eklendi; sağlayıcı silinince ona bağlı EPG XML linkleri ve tablodaki yetim veriler temizlenir.
+  * **ManagerServer Kalıcılığı & Port Sabitleme (`ManagerServer.kt`, `AppSettings.kt`):**
+    * TV server portu `8765` olarak sabitlendi (meşgulse fallback).
+    * Rastgele 5 byte token yerine `settings.getOrCreateManagerToken()` ile SharedPreferences'ta kalıcı token üretildi; TV yeniden başlatılsa bile yetki anahtarı korunur.
+    * `GET /ping` endpoint'i token kontrolü önüne alındı; LAN cihazlarının TV'yi ve token geçerliliğini doğrulaması sağlandı. `IDLE_TIMEOUT_MINUTES` 24 saate çıkarıldı.
+    * `MainActivity.kt`: TV cihazlarında (`isTelevision`) `managerServer.start()` onCreate'de otomatik başlatılır ve onDestroy'da durdurulur.
+  * **Otomatik Eşitlemenin Kaldırılması (`RemoteScreen.kt`):** `parseAndConnect()` içindeki otomatik `TvCastHelper.syncSourcesToTv(...)` çağrısı kaldırıldı. Senkronizasyon sadece kumandadaki "Sağlayıcıları Eşitle" çipine basıldığında çalışır.
+  * **Yerel Ağ Otomatik Keşif & Canlı Kalma (`RemoteScreen.kt`):**
+    * `pingTv(targetUrl, token)` ve `discoverTvOnLan(token)` (subnet 1..254 paralel tarama) eklendi.
+    * `LaunchedEffect`: TV IP'si DHCP ile değişse bile saniyeler içinde otomatik keşfedip bağlanır; 15 saniyelik kalp atışıyla TV'nin açık/kapalı durumu canlı takip edilir.
+  * **Sağ Başparmak Odaklı Ergonomik Kumanda Tasarımı (`RemoteScreen.kt`):**
+    * **Üst Bar:** Kompakt TV kısayolları (`Canlı TV`, `Film`, `Dizi`, `Anasayfa`, `Sağlayıcıları Eşitle`).
+    * **Hızlı Menü Barı:** `Geri`, `Oynat/Duraklat`, `Sessiz`, `Rehber`, `Sayılar (123)`.
+    * **Ana Kontrol Bloğu (Thumb Zone):**
+      * **Solunda:** `SES` Rocker Kapsülü (Ses Aç, SES etiketi, Ses Kıs) - 62.dp genişlik.
+      * **Ortasında:** `Joystick Yuvarlağı` (208.dp çapında D-Pad çemberi; Yukarı, Aşağı, Sol, Sağ ve ortada 74.dp `OK` butonu - sağ başparmağın doğal basma hizasında).
+      * **Sağında:** `KANAL` Rocker Kapsülü (Kanal İleri, KANAL etiketi, Kanal Geri) - 62.dp genişlik.
+    * **Genişletilebilir Numaratör:** İhtiyaç halinde `Sayılar` butonuna basıldığında altta açılan 0-9 tuş takımı.
+
+### 15. Sıfır Gecikmeli Sanal Fare (Touchpad) Modu & Beliren TV Arama Klavyesi (v0.12.08)
+* **Kullanıcı İstekleri:**
+  1. Kumanda ekranına bir "Fare" butonu eklenmesi; tıklandığında telefonun TV için kasmadan, donmadan akıcı bir dokunmatik fare (touchpad) olarak kullanılabilmesi.
+  2. Fare TV'deki arama butonuna götürülüp tıklandığında (veya TV'de arama ekranı aktif olduğunda) telefondaki mouse alanının hemen altında bir klavye belirmesi; kullanıcının TV'de harf harf seçmek yerine telefondan hızlıca yazıp aratabilmesi ve bu işlemin kasmaya/donmaya yol açmaması.
+* **Teknik Çözüm ve Kararlar:**
+  * **Sıfır Gecikmeli UDP İletişim Protokolü (`VirtualMouseServer.kt`, Port 8766):**
+    * Parmak kaydırmaları saniyede 60-120 olay üretir. HTTP istekleri ağ kuyruğunu tıkayıp TV'de donmaya sebep olacağı için 9 baytlık UDP datagram paketi (`[type: Byte, dx: Float, dy: Float]`) geliştirildi.
+    * `Channel<Pair<Float, Float>>(capacity = Channel.CONFLATED)` boru hattı kullanılarak ağ gecikmesi ve bellek yükü 0 ms seviyesine indirildi.
+  * **Donanım Hızlandırmalı GPU İmleci (`VirtualMouseOverlay.kt`):**
+    * Standart Compose recomposition yerine `graphicsLayer { translationX = pointerX; translationY = pointerY }` ile GPU katmanında 60/120 FPS akıcı imleç hareketi sağlandı; ekrandaki diğer hiçbir bileşen gereksiz yere yeniden çizilmez.
+    * Keskin ok imleci, gölge kenarlığı ve tıklama anında yayılan nabız animasyonu (`isClicking`) eklendi. 12 saniye hareketsizlik sonrası otomatik gizlenme uygulandı.
+  * **Ekrana Dokunma Enjeksiyonu (`window.decorView.dispatchTouchEvent`):**
+    * Fare tıklandığında imlecin altındaki koordinata sentetik `ACTION_DOWN` ve `ACTION_UP` dokunma olayları gönderilir; TV arayüzündeki butonlar, kartlar ve arama çubuğu doğrudan tetiklenir.
+  * **Beliren Klavye & Arama Entegrasyonu (`RemoteScreen.kt`, `MainActivity.kt`):**
+    * TV'de arama ekranına girildiğinde (`Routes.search`) `NavController.OnDestinationChangedListener` tetiklenir ve `ManagerServer.isSearchActive = true` bayrağı `/ping` yanıtında telefona iletilir.
+    * Fare modundayken Touchpad ve Sol/Sağ tık butonlarının hemen altında yer alan klavye kartı turkuaz ışıkla (`TV ARAMA EKRANI AKTİF — Buradan Hızlıca Yazın`) parlar; `focusRequester` ve `keyboardController` ile telefon klavyesi otomatik olarak açılır.
+    * Kullanıcı telefondan metni yazıp "TV'de Ara & Gönder" veya klavyeden Ara/Enter tuşuna bastığında sorgu 0 ms gecikmeyle doğrudan TV'ye aktarılır.
+  * **Kumanda & Fare Geçiş Ergonomisi (`RemoteScreen.kt`):**
+    * Hızlı menü barına `Fare` butonu (açık/kapalı ışıklı durum göstergesiyle) entegre edildi.
+    * Fare moduna geçildiğinde üstte `[ 🎮 Kumandaya Dön ]` butonu, ortada 210.dp hassas Touchpad yüzeyi, altında geniş `SOL TIK (SEÇ)` ve `SAĞ TIK (GERİ)` butonları ve hemen altında Hızlı TV Arama Klavyesi yer alır.
+
+### 16. Sanal Fare (Touchpad) & TV Klavyesi Entegrasyonu, Tam Çoklu Dil (TR & EN) Desteği & v0.12.09
+* **Kullanıcı İstekleri:**
+  1. Kumanda ekranına bir fare (touchpad) butonu eklenmesi; telefon ekranının kasmadan, donmadan TV'de fare gibi kullanılabilmesi.
+  2. TV arama ekranına girildiğinde telefondaki farenin altında anında klavye belirmesi ve TV'ye doğrudan hızlı arama metni gönderilebilmesi.
+  3. Uygulamanın tamamının detaylı dil analizinden geçirilmesi; sonradan eklenen ve sert kodlanmış (hardcoded) tüm buton, etiket, açıklama, diyalog, tost ve panellerin eksiksiz İngilizce ve Türkçe kaynaklara (`strings.xml`) bağlanarak çoklu dil desteğinin tamamlanması.
+  4. Kod doğrulamasının yapılması, sürümün güncellenmesi ve GitHub'a release olarak yüklenmesi.
+* **Teknik Çözüm ve Kararlar:**
+  * **Sanal Fare & UDP Protokolü (`VirtualMouseServer.kt`, `VirtualMouseOverlay.kt`, `RemoteScreen.kt`):** Port 8766 üzerinde sıfır gecikmeli UDP paketleri, GPU donanım hızlandırmalı imleç overlay'i ve `dispatchTouchEvent` sentetik dokunma tetikleyicisi.
+  * **Beliren Akıllı Klavye:** TV'de arama ekranı açıldığında telefon klavyesinin otomatik belirmesi ve doğrudan TV arama motoruna iletilmesi.
+  * **Eksiksiz Dil Yerelleştirmesi (`values/strings.xml`, `values-tr/strings.xml`):**
+    * Kumanda & Fare (`remote_*`): Touchpad modu, D-pad, ses/kanal düğmeleri, arama kartı, QR/IP diyalogları.
+    * Sağlayıcı Hız Testi & Teşhis (`provider_*`): Ping, hız (Mbps), hesap bitiş/oluşturulma tarihleri, yayın formatları.
+    * Web Yönetici & Eşleşme (`web_manager_*`): Canlı bağlantı rozetleri, rehber adımları, güvenlik notları.
+    * VOD Oynatıcı, Altyazı & Akıllı Senkron (`vod_*`): Harici oynatıcı (VLC/MX), sonraki bölüm kartları, OpenSubtitles/TheSubtitleDB çoklu arama, milisaniye hassasiyetli akıllı senkron HUD'ı, sıralama seçenekleri.
+    * Kategori ve Kanal Eylemleri (`category_action_*`, `channel_action_*`): Aç, gizle, iptal, toast bildirimleri.
+  * **Sürüm Yayınlama:** `app/build.gradle.kts` içinde `versionCode = 30`, `versionName = "0.12.09"` yapıldı.
+
 ---
 
 ## 📌 Hızlı Referans & Mimari Kurallar

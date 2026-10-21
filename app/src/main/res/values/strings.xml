@@ -446,6 +446,8 @@
     <string name="search_type_name">Type a name</string>
     <string name="search_start_hint">Start typing to search channels, movies and shows.</string>
     <string name="search_no_results">No results for “%1$s”.</string>
+    <string name="search_scope_all">All</string>
+    <string name="search_no_results_in_scope">No results in %1$s for “%2$s”.</string>
 
     <!-- ============================ On-screen keyboard ============================ -->
     <string name="kbd_space">Space</string>
@@ -453,6 +455,7 @@
     <string name="kbd_clear">Clear</string>
     <string name="kbd_paste">Paste</string>
     <string name="kbd_clipboard_empty">Nothing to paste</string>
+    <string name="kbd_caps">a/A</string>
 
     <!-- ============================ Movies & shows (VOD) ============================ -->
     <string name="vod_loading_movies">Loading movies</string>
@@ -637,4 +640,154 @@
     <string name="settings_profile_balanced_desc">For 2 GB RAM Android TVs &amp; TV boxes. Smooth playback, 15s dynamic buffer and balanced resources.</string>
     <string name="settings_profile_ultra">High Performance (Ultra)</string>
     <string name="settings_profile_ultra_desc">For 3 GB+ RAM high-end TV boxes (Shield TV). 30s buffer, full multi-view and max 4K/60FPS responsiveness.</string>
+
+    <!-- Remote Control, Virtual Mouse & Touchpad -->
+    <string name="remote_title">GECE TV Remote</string>
+    <string name="remote_connected">Connected: %1$s</string>
+    <string name="remote_scanning">Searching TV on Network…</string>
+    <string name="remote_connecting_status">Connecting…</string>
+    <string name="remote_waiting_tv">Waiting for TV (Same Wi-Fi)</string>
+    <string name="remote_not_connected">TV Not Connected</string>
+    <string name="remote_card_title_ready">Turn Your Phone Into a Remote</string>
+    <string name="remote_card_desc_paired">Paired previously! When you open GECE IPTV on your TV, it will connect automatically over the network.</string>
+    <string name="remote_card_desc_unpaired">Open Settings &gt; TV Remote on your television and scan the QR code to switch to remote control mode.</string>
+    <string name="remote_status_connected">Connected</string>
+    <string name="remote_status_not_connected">Not Connected</string>
+    <string name="remote_status_connecting">Connecting…</string>
+    <string name="remote_status_searching_lan">Scanning LAN…</string>
+    <string name="remote_btn_qr_scan">Scan QR</string>
+    <string name="remote_btn_qr_change">Change TV</string>
+    <string name="remote_btn_power">Power</string>
+    <string name="remote_send_text_hint">Send text or search query to TV…</string>
+    <string name="remote_send">Send</string>
+    <string name="remote_nav_live">Live TV</string>
+    <string name="remote_nav_movies">Movies</string>
+    <string name="remote_nav_shows">Series</string>
+    <string name="remote_nav_home">Home</string>
+    <string name="remote_sync_sources">Sync Providers</string>
+    <string name="remote_btn_back">Back</string>
+    <string name="remote_btn_play_pause">Play/Pause</string>
+    <string name="remote_btn_mute">Mute</string>
+    <string name="remote_btn_guide">Guide</string>
+    <string name="remote_btn_mouse">Mouse</string>
+    <string name="remote_btn_mouse_on">Mouse: On</string>
+    <string name="remote_btn_numpad">Numbers</string>
+    <string name="remote_vol_title">VOL</string>
+    <string name="remote_vol_up">Volume Up</string>
+    <string name="remote_vol_down">Volume Down</string>
+    <string name="remote_ch_title">CH</string>
+    <string name="remote_ch_up">Channel Up</string>
+    <string name="remote_ch_down">Channel Down</string>
+    <string name="remote_dpad_up">Up</string>
+    <string name="remote_dpad_down">Down</string>
+    <string name="remote_dpad_left">Left</string>
+    <string name="remote_dpad_right">Right</string>
+    <string name="remote_dpad_ok">OK</string>
+    <string name="remote_numpad_title">Key in Channel Number</string>
+    <string name="remote_mouse_title">TOUCHPAD MOUSE</string>
+    <string name="remote_mouse_return_remote">Back to Remote</string>
+    <string name="remote_mouse_guide_drag">Glide your finger to move the TV cursor</string>
+    <string name="remote_mouse_guide_tap">Tap the surface or use buttons below to click</string>
+    <string name="remote_mouse_left_click">LEFT CLICK (SELECT)</string>
+    <string name="remote_mouse_right_click">RIGHT CLICK (BACK)</string>
+    <string name="remote_mouse_search_active">TV SEARCH ACTIVE — Type Fast Here</string>
+    <string name="remote_mouse_search_title">TV Search &amp; Keyboard Input</string>
+    <string name="remote_mouse_search_live_badge">LIVE</string>
+    <string name="remote_mouse_keyboard_hint">Type quickly instead of picking letter by letter…</string>
+    <string name="remote_mouse_search_send">Search on TV</string>
+    <string name="remote_reconnect_now">Reconnect Now</string>
+    <string name="remote_scan_different_tv">Scan QR for Another TV</string>
+    <string name="remote_scan_qr_camera">Scan QR Code with Camera</string>
+    <string name="remote_manual_ip_link">Or Connect Manually via TV IP ›</string>
+    <string name="remote_lan_scanning">Scanning Network for TV…</string>
+    <string name="remote_connecting">Connecting to TV…</string>
+    <string name="remote_lan_search_desc">Searching for TV on the same Wi-Fi network…</string>
+    <string name="remote_toast_connected">✓ Connected to TV!</string>
+    <string name="remote_toast_not_found">TV not found. Make sure the app is open on your TV.</string>
+    <string name="remote_toast_invalid_qr">Invalid QR code or IP address format.</string>
+    <string name="remote_camera_permission_title">Camera Permission Required</string>
+    <string name="remote_camera_permission_desc">To pair with the TV remote, please allow camera access to scan the QR code.</string>
+    <string name="remote_camera_permission_allow">Allow Access</string>
+    <string name="remote_align_qr_title">Align the QR Code on TV</string>
+    <string name="remote_align_qr_desc">Position the TV\'s QR code within the frame</string>
+    <string name="remote_dialog_manual_title">Connect via TV IP Address</string>
+    <string name="remote_dialog_manual_desc">Enter the IP address and optional pairing token shown on your TV\'s Settings &gt; TV Remote screen.</string>
+    <string name="remote_dialog_ip_hint">TV IP Address (e.g., 192.168.1.50:8765)</string>
+    <string name="remote_dialog_token_hint">Token (Optional code under QR)</string>
+    <string name="remote_btn_connect">Connect</string>
+
+    <!-- Provider Speed Test & Diagnostics -->
+    <string name="provider_speed_test_btn">⚡ Speed Test</string>
+    <string name="provider_speed_test_banner_title">⚡ Provider Speed &amp; Link Diagnostics</string>
+    <string name="provider_speed_test_banner_desc">Test ping latency, download speed (Mbps), account creation/expiry dates, and stream formats.</string>
+    <string name="provider_speed_test_start_btn">⚡ Run Speed Test</string>
+    <string name="provider_speed_test_running_title">⚡ Testing Provider Connection &amp; Speed…</string>
+    <string name="provider_speed_test_running_desc">Measuring ping latency, live data throughput (Mbps), account creation/expiry dates, and stream format. Please wait…</string>
+    <string name="provider_speed_test_failed">⚠️ Connection Test Failed: %1$s</string>
+    <string name="provider_speed_test_report_title">Provider Speed &amp; Link Diagnostic Report</string>
+    <string name="provider_speed_test_retest">Retest</string>
+    <string name="provider_metric_ping">LATENCY (PING)</string>
+    <string name="provider_metric_speed">CONNECTION SPEED</string>
+    <string name="provider_metric_dates">ACCOUNT DATES</string>
+    <string name="provider_metric_format">STREAM FORMAT</string>
+    <string name="provider_metric_status">CONNECTION STATUS</string>
+    <string name="provider_ping_excellent">🟢 Excellent Response</string>
+    <string name="provider_ping_good">🟡 Very Good</string>
+    <string name="provider_ping_normal">🟠 Normal</string>
+    <string name="provider_speed_4k">🚀 4K Ultra HD Ready</string>
+    <string name="provider_speed_fhd">✨ Full HD 1080p Ready</string>
+    <string name="provider_speed_sd">📺 SD / 720p Smooth</string>
+    <string name="provider_date_created">Created: %1$s</string>
+    <string name="provider_date_unspecified">Unspecified</string>
+    <string name="provider_date_unlimited">Lifetime / Unlimited</string>
+    <string name="provider_active_choice">Active Choice: %1$s</string>
+    <string name="provider_conns_active">%1$d / %2$d Active</string>
+    <string name="provider_status_online">%1$s (Online)</string>
+
+    <!-- Web Manager & Phone Pairing on TV -->
+    <string name="web_manager_badge">LIVE CONNECTION READY • SAME WI-FI</string>
+    <string name="web_manager_title">Phone Pairing &amp; Smart Remote</string>
+    <string name="web_manager_desc">Turn your phone into a remote control instantly. Manage your TV, launch channels, or add IPTV playlists from the web panel.</string>
+    <string name="web_manager_scan_cam">📸 Point Phone Camera</string>
+    <string name="web_manager_feature_remote_title">Smart Touch Remote</string>
+    <string name="web_manager_feature_remote_desc">D-Pad direction keys, volume/channel rockers, numeric keys, and direct text search to TV.</string>
+    <string name="web_manager_feature_browse_title">Browse Channels &amp; Open on TV</string>
+    <string name="web_manager_feature_browse_desc">Browse categories and channels on your phone, then start playback on TV with one tap.</string>
+    <string name="web_manager_feature_m3u_title">Add IPTV &amp; M3U Playlist</string>
+    <string name="web_manager_feature_paste_desc">Paste long M3U or Xtream links from your phone\'s clipboard directly to the TV.</string>
+    <string name="web_manager_security_note">🔒 100% Local Network • Works Offline • Secure Token</string>
+
+    <!-- Category Actions Modal -->
+    <string name="category_action_open">▶ Open</string>
+    <string name="category_action_hide">👁️ Hide</string>
+    <string name="category_action_hidden_toast">%1$s hidden</string>
+    <string name="category_action_options">Category Options</string>
+
+    <!-- VOD Player, Subtitles & Sync -->
+    <string name="vod_external_player">External Player</string>
+    <string name="vod_open_external_player">Open with External Player (VLC / MX)</string>
+    <string name="vod_next_episode_tag">Next Episode (S%1$dE%2$d)</string>
+    <string name="vod_next_episode_title">NEXT EPISODE</string>
+    <string name="vod_sub_searching">⏳ Searching Multiple Sources…</string>
+    <string name="vod_sub_search_btn">🌐 Search Online Subtitles (OpenSubtitles + TheSubtitleDB)</string>
+    <string name="vod_sub_tab_selection">📋 Subtitle Selection</string>
+    <string name="vod_sub_tab_sync">⚡ Smart Sync</string>
+    <string name="vod_sub_sync_exact">0.00s (Exact Match)</string>
+    <string name="vod_sub_sync_delayed">+%1$.2fs (Subtitle Delayed)</string>
+    <string name="vod_sub_sync_advanced">%1$.2fs (Subtitle Advanced)</string>
+    <string name="vod_sub_sync_diff">SYNC OFFSET</string>
+    <string name="vod_sub_quick_adjust">Quick Timing Adjust</string>
+    <string name="vod_sub_reset_sync">Reset 0.0s</string>
+    <string name="vod_sub_smart_presets">Smart Presets</string>
+    <string name="vod_send_to_tv">Send to TV</string>
+    <string name="vod_sort_default">Sorting: Default</string>
+    <string name="vod_sort_rating">Sorting: By Rating</string>
+    <string name="vod_sort_year">Sorting: By Year</string>
+    <string name="vod_sort_name">Sorting: By Name</string>
+    <string name="vod_sub_not_found">Subtitles not found (\"%1$s\")</string>
+    <string name="vod_sub_found">%1$d subtitles found</string>
+    <string name="vod_track_num">Track %1$d</string>
+    <string name="vod_audio_num">Audio %1$d</string>
+    <string name="channel_action_hide">👁️ Hide Channel in List</string>
+    <string name="channel_action_hidden_toast">%1$s hidden in list</string>
 </resources>

@@ -107,26 +107,52 @@ class EpgRepository(
     }
 
     /**
+     * Removes the EPG feed associated with a specific provider source, taking its guide
+     * data and aliases with it.
+     */
+    suspend fun removeFeedForProvider(sourceId: Long) {
+        val feed = feedDao.forProvider(sourceId) ?: return
+        removeFeed(feed)
+    }
+
+    /**
+     * Detects and removes any EPG feeds whose provider source has been deleted from the database.
+     * Prevents orphaned feeds from looping or failing sync repeatedly.
+     */
+    suspend fun pruneOrphanedProviderFeeds() {
+        val validSourceIds = sourceDao.all().map { it.id }.toSet()
+        val allFeeds = feedDao.all()
+        for (feed in allFeeds) {
+            val providerId = feed.providerSourceId
+            if (providerId != null && !validSourceIds.contains(providerId)) {
+                removeFeed(feed)
+            }
+        }
+    }
+
+    /**
      * Makes sure the standing feed rows exist: one per provider source, plus the curated
-     * built-in list. Insert-if-absent, so user toggles survive every call.
+     * built-in list. Also prunes any orphaned provider feeds whose sources were deleted.
      */
     suspend fun ensureFeeds() {
+        pruneOrphanedProviderFeeds()
         for (source in sourceDao.enabled()) {
-            if (feedDao.forProvider(source.id) == null) {
+            val existing = feedDao.forProvider(source.id)
+            val expectedName = "${source.name} (provider guide)"
+            if (existing == null) {
                 feedDao.insert(
                     EpgFeed(
-                        name = "${source.name} (provider guide)",
+                        name = expectedName,
                         providerSourceId = source.id,
                         enabled = true,
                     ),
                 )
+            } else if (existing.name != expectedName) {
+                feedDao.update(existing.copy(name = expectedName))
             }
         }
         for ((name, url) in BUILT_IN_FEEDS) {
             if (feedDao.byUrl(url) == null) {
-                // Off by default: shipping a switched-on 20 MB download for a country the
-                // user may not live in would be rude. The EPG settings screen makes
-                // enabling one a single click.
                 feedDao.insert(EpgFeed(name = name, url = url, builtIn = true, enabled = false))
             }
         }
@@ -246,8 +272,11 @@ class EpgRepository(
     private suspend fun openFeedStream(feed: EpgFeed): InputStream {
         val raw: InputStream = when {
             feed.providerSourceId != null -> {
-                val source: Source = sourceDao.byId(feed.providerSourceId)
-                    ?: throw IllegalStateException("Provider for this guide no longer exists.")
+                val source: Source? = sourceDao.byId(feed.providerSourceId)
+                if (source == null) {
+                    removeFeed(feed)
+                    throw IllegalStateException("Provider for this guide no longer exists.")
+                }
                 api.openEpgStream(source)
             }
             feed.url != null -> {

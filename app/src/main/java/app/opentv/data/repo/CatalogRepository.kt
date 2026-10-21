@@ -10,8 +10,11 @@ import app.opentv.core.AppSettings
 import app.opentv.data.db.CategoryDao
 import app.opentv.data.db.ChannelDao
 import app.opentv.data.db.EpisodeDao
+import app.opentv.data.db.EpgChannelAliasDao
+import app.opentv.data.db.EpgFeedDao
 import app.opentv.data.db.MovieDao
 import app.opentv.data.db.PlaybackPositionDao
+import app.opentv.data.db.ProgrammeDao
 import app.opentv.data.db.SeriesDao
 import app.opentv.data.db.SourceDao
 import app.opentv.data.model.Category
@@ -133,6 +136,9 @@ class CatalogRepository(
     private val stalkerApi: StalkerApi,
     private val http: OkHttpClient,
     private val settings: AppSettings,
+    private val epgFeedDao: EpgFeedDao? = null,
+    private val programmeDao: ProgrammeDao? = null,
+    private val aliasDao: EpgChannelAliasDao? = null,
 ) {
 
     /** TMDB back-fill for VOD detail pages, gated on a user-supplied key. See [TmdbClient]. */
@@ -1044,6 +1050,12 @@ class CatalogRepository(
     }
 
     suspend fun deleteSource(sourceId: Long) = withContext(Dispatchers.IO) {
+        val feed = epgFeedDao?.forProvider(sourceId)
+        if (feed != null) {
+            programmeDao?.deleteForFeed(feed.id)
+            aliasDao?.deleteForFeed(feed.id)
+            epgFeedDao?.delete(feed.id)
+        }
         channelDao.deleteForSource(sourceId)
         categoryDao.deleteForSource(sourceId)
         movieDao.deleteForSource(sourceId)

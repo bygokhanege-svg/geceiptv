@@ -647,7 +647,7 @@ fun PlayerScreen(
                     if (isTvPaired && castId != null) {
                         BarChip(
                             icon = Icons.Filled.Tv,
-                            label = "TV'ye Gönder",
+                            label = stringResource(R.string.vod_send_to_tv),
                             selected = false,
                         ) {
                             TvCastHelper.castChannel(context, scope, castId, channelTitle)

@@ -133,7 +133,7 @@ private fun Listening(session: ManagerServer.Session, onBack: () -> Unit) {
                         .background(Color(0xFF10B981)),
                 )
                 Text(
-                    "CANLI BAĞLANTI HAZIR • AYNI WI-FI AĞI",
+                    stringResource(R.string.web_manager_badge),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF34D399),
@@ -143,7 +143,7 @@ private fun Listening(session: ManagerServer.Session, onBack: () -> Unit) {
             Spacer(Modifier.height(10.dp))
 
             Text(
-                "Telefon Bağlantısı & Akıllı Kumanda",
+                stringResource(R.string.web_manager_title),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
@@ -153,7 +153,7 @@ private fun Listening(session: ManagerServer.Session, onBack: () -> Unit) {
             Spacer(Modifier.height(6.dp))
 
             Text(
-                "Telefonunuzu anında kumandaya dönüştürün. Açılan web panelinden TV'yi yönetebilir, kanalları açabilir veya IPTV listesi ekleyebilirsiniz.",
+                stringResource(R.string.web_manager_desc),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -191,7 +191,7 @@ private fun Listening(session: ManagerServer.Session, onBack: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        "📸 Telefon Kamerasını Doğrultun",
+                        stringResource(R.string.web_manager_scan_cam),
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary,
@@ -213,20 +213,20 @@ private fun Listening(session: ManagerServer.Session, onBack: () -> Unit) {
             // 3 Instruction Steps Cards
             StepRow(
                 step = "1",
-                title = "Akıllı Dokunmatik Kumanda",
-                desc = "D-Pad yön tuşları, ses / kanal kontrolü, sayısal tuşlar ve TV'ye doğrudan arama metni gönderme.",
+                title = stringResource(R.string.web_manager_feature_remote_title),
+                desc = stringResource(R.string.web_manager_feature_remote_desc),
             )
             Spacer(Modifier.height(8.dp))
             StepRow(
                 step = "2",
-                title = "Kanallara Göz At & TV'de Aç",
-                desc = "Telefonunuzdan kategorileri ve kanalları listeleyin, tek dokunuşla TV ekranında hemen başlatın.",
+                title = stringResource(R.string.web_manager_feature_browse_title),
+                desc = stringResource(R.string.web_manager_feature_browse_desc),
             )
             Spacer(Modifier.height(8.dp))
             StepRow(
                 step = "3",
-                title = "IPTV & M3U Listesi Ekle",
-                desc = "Uzun M3U veya Xtream linklerini kumandayla yazmak yerine telefonunuzun panosundan yapıştırıp aktarın.",
+                title = stringResource(R.string.web_manager_feature_m3u_title),
+                desc = stringResource(R.string.web_manager_feature_paste_desc),
             )
 
             Spacer(Modifier.height(16.dp))
@@ -241,7 +241,7 @@ private fun Listening(session: ManagerServer.Session, onBack: () -> Unit) {
             Spacer(Modifier.height(6.dp))
 
             Text(
-                "🔒 %100 Yerel Ağ • İnternetsiz Çalışır • Güvenli Token",
+                stringResource(R.string.web_manager_security_note),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                 textAlign = TextAlign.Center,
@@ -289,7 +289,7 @@ private fun Listening(session: ManagerServer.Session, onBack: () -> Unit) {
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            "📸 Telefon Kamerasını Doğrultun",
+                            stringResource(R.string.web_manager_scan_cam),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.primary,
@@ -330,7 +330,7 @@ private fun Listening(session: ManagerServer.Session, onBack: () -> Unit) {
                             .background(Color(0xFF10B981)),
                     )
                     Text(
-                        "CANLI BAĞLANTI HAZIR • AYNI WI-FI AĞI",
+                        stringResource(R.string.web_manager_badge),
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF34D399),
@@ -340,7 +340,7 @@ private fun Listening(session: ManagerServer.Session, onBack: () -> Unit) {
                 Spacer(Modifier.height(12.dp))
 
                 Text(
-                    "Telefon Bağlantısı & Akıllı Kumanda",
+                    stringResource(R.string.web_manager_title),
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground,
@@ -349,7 +349,7 @@ private fun Listening(session: ManagerServer.Session, onBack: () -> Unit) {
                 Spacer(Modifier.height(6.dp))
 
                 Text(
-                    "Telefonunuzu anında kumandaya dönüştürün. Uygulama indirmenize gerek yoktur; açılan web panelinden TV'yi yönetebilir, kanalları açabilir veya IPTV listesi ekleyebilirsiniz.",
+                    stringResource(R.string.web_manager_desc),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -359,20 +359,20 @@ private fun Listening(session: ManagerServer.Session, onBack: () -> Unit) {
                 // 3 Instruction Steps Cards
                 StepRow(
                     step = "1",
-                    title = "Akıllı Dokunmatik Kumanda",
-                    desc = "D-Pad yön tuşları, ses / kanal kontrolü, sayısal tuşlar ve TV'ye doğrudan arama metni gönderme.",
+                    title = stringResource(R.string.web_manager_feature_remote_title),
+                    desc = stringResource(R.string.web_manager_feature_remote_desc),
                 )
                 Spacer(Modifier.height(8.dp))
                 StepRow(
                     step = "2",
-                    title = "Kanallara Göz At & TV'de Aç",
-                    desc = "Telefonunuzdan kategorileri ve kanalları listeleyin, tek dokunuşla TV ekranında hemen başlatın.",
+                    title = stringResource(R.string.web_manager_feature_browse_title),
+                    desc = stringResource(R.string.web_manager_feature_browse_desc),
                 )
                 Spacer(Modifier.height(8.dp))
                 StepRow(
                     step = "3",
-                    title = "IPTV & M3U Listesi Ekle",
-                    desc = "Uzun M3U veya Xtream linklerini kumandayla yazmak yerine telefonunuzun panosundan yapıştırıp aktarın.",
+                    title = stringResource(R.string.web_manager_feature_m3u_title),
+                    desc = stringResource(R.string.web_manager_feature_paste_desc),
                 )
 
                 Spacer(Modifier.height(18.dp))
@@ -385,7 +385,7 @@ private fun Listening(session: ManagerServer.Session, onBack: () -> Unit) {
                         Text(stringResource(R.string.common_done))
                     }
                     Text(
-                        "🔒 %100 Yerel Ağ • İnternetsiz Çalışır • Güvenli Token",
+                        stringResource(R.string.web_manager_security_note),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     )

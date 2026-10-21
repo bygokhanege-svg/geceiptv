@@ -359,7 +359,10 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun delete(source: Source) {
-        viewModelScope.launch { graph.catalogRepository.deleteSource(source.id) }
+        viewModelScope.launch {
+            graph.catalogRepository.deleteSource(source.id)
+            graph.epgRepository.removeFeedForProvider(source.id)
+        }
     }
 
     /**

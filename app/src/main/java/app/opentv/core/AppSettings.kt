@@ -297,6 +297,16 @@ class AppSettings private constructor(context: Context) {
         _activeSourceId.value = id
     }
 
+    /** Persistent token for the local TV manager / remote server. Preserved across reboots. */
+    fun getOrCreateManagerToken(): String {
+        val existing = prefs.getString("manager_server_token", "") ?: ""
+        if (existing.isNotBlank()) return existing
+        val random = java.security.SecureRandom()
+        val newToken = ByteArray(5).also(random::nextBytes).joinToString("") { "%02x".format(it) }
+        prefs.edit().putString("manager_server_token", newToken).apply()
+        return newToken
+    }
+
     // ---- Hardware Stabilization & Buffer Optimization ---------------------------------------
 
     private val _hardwareProfile = MutableStateFlow(prefs.getString(KEY_HARDWARE_PROFILE, "BALANCED") ?: "BALANCED")

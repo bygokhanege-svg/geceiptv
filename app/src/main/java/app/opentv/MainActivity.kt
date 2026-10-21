@@ -43,6 +43,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -126,9 +127,13 @@ class MainActivity : ComponentActivity() {
         // On TV devices, keep the screen awake permanently while the app is in the foreground.
         // This prevents Android TV / Google TV / Fire TV screensavers and Daydream ambient mode
         // from triggering while using GECE IPTV.
+        ServiceLocator.get(this).virtualMouseServer.attachActivity(this)
         if (isTelevision) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             window.decorView.keepScreenOn = true
+            // Start local TV remote manager server so paired phones can connect automatically
+            ServiceLocator.get(this).managerServer.start()
+            ServiceLocator.get(this).virtualMouseServer.start()
         }
 
         setContent {
@@ -256,6 +261,11 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         app.opentv.player.PlayerController.stopAll()
+        ServiceLocator.get(this).virtualMouseServer.detachActivity()
+        if (isTelevisionDevice) {
+            ServiceLocator.get(this).managerServer.stop()
+            ServiceLocator.get(this).virtualMouseServer.stop()
+        }
     }
 
     companion object {
@@ -322,6 +332,17 @@ private fun GeceIptvApp(isTelevision: Boolean) {
     val context = LocalContext.current
     val licenseManager = remember { ServiceLocator.get(context).licenseManager }
     val navController = rememberNavController()
+    DisposableEffect(navController) {
+        val listener = androidx.navigation.NavController.OnDestinationChangedListener { _, destination, _ ->
+            val isSearch = destination.route?.startsWith("search") == true
+            ServiceLocator.get(context).managerServer.isSearchActive = isSearch
+            ServiceLocator.get(context).virtualMouseServer.isSearchActiveOnTv = isSearch
+        }
+        navController.addOnDestinationChangedListener(listener)
+        onDispose {
+            navController.removeOnDestinationChangedListener(listener)
+        }
+    }
     val sourcesViewModel: SourcesViewModel = viewModel()
     val vodViewModel: VodViewModel = viewModel()
     val profilesViewModel: ProfilesViewModel = viewModel()
@@ -459,6 +480,18 @@ private fun GeceIptvApp(isTelevision: Boolean) {
                         android.media.AudioManager.ADJUST_TOGGLE_MUTE,
                         android.media.AudioManager.FLAG_SHOW_UI,
                     )
+                }
+                is app.opentv.core.RemoteControlSignals.RemoteCommand.MouseClick -> {
+                    ServiceLocator.get(context).virtualMouseServer.triggerClick()
+                }
+                is app.opentv.core.RemoteControlSignals.RemoteCommand.MouseBack -> {
+                    ServiceLocator.get(context).virtualMouseServer.triggerBack()
+                }
+                is app.opentv.core.RemoteControlSignals.RemoteCommand.MouseActivate -> {
+                    ServiceLocator.get(context).virtualMouseServer.activatePointer()
+                }
+                is app.opentv.core.RemoteControlSignals.RemoteCommand.MouseHide -> {
+                    ServiceLocator.get(context).virtualMouseServer.hidePointer()
                 }
                 else -> {
                     val keyCode = when (cmd) {
@@ -852,6 +885,9 @@ private fun GeceIptvApp(isTelevision: Boolean) {
                 },
             )
         }
+
+        // Virtual Mouse pointer overlay (hardware-accelerated GPU render)
+        app.opentv.ui.remote.VirtualMouseOverlay(server = ServiceLocator.get(context).virtualMouseServer)
 
         // Sits above the whole nav graph so a found update can prompt from any screen.
         UpdateGate()

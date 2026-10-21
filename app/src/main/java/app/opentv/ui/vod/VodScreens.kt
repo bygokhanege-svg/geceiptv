@@ -922,20 +922,20 @@ private fun VodActionModal(
             Spacer(Modifier.height(18.dp))
 
             // Seçenek 1: Aç
-            VodActionRow("▶ Aç", primary = true) {
+            VodActionRow(stringResource(R.string.category_action_open), primary = true) {
                 target.onOpen()
                 onDismiss()
             }
 
             // Seçenek 2: Gizle
-            VodActionRow("👁️ Gizle") {
+            VodActionRow(stringResource(R.string.category_action_hide)) {
                 onHideCategories(target.categoryIds, target.title)
-                Toast.makeText(context, "${target.title} gizlendi", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, context.getString(R.string.category_action_hidden_toast, target.title), Toast.LENGTH_SHORT).show()
                 onDismiss()
             }
 
             // Seçenek 3: İptal
-            VodActionRow("İptal") {
+            VodActionRow(stringResource(R.string.common_cancel)) {
                 onDismiss()
             }
         }
@@ -1387,10 +1387,10 @@ private fun SortAffordance(current: SortOption, onNextSort: () -> Unit) {
         val tint = if (focused) MaterialTheme.colorScheme.onPrimary
         else MaterialTheme.colorScheme.onSurfaceVariant
         val text = when (current) {
-            SortOption.DEFAULT -> "Sıralama: Varsayılan"
-            SortOption.RATING -> "Sıralama: Puana Göre"
-            SortOption.YEAR -> "Sıralama: Yıla Göre"
-            SortOption.NAME -> "Sıralama: İsme Göre"
+            SortOption.DEFAULT -> stringResource(R.string.vod_sort_default)
+            SortOption.RATING -> stringResource(R.string.vod_sort_rating)
+            SortOption.YEAR -> stringResource(R.string.vod_sort_year)
+            SortOption.NAME -> stringResource(R.string.vod_sort_name)
         }
         Text(text, style = MaterialTheme.typography.titleMedium, color = tint)
     }

@@ -150,10 +150,10 @@ fun ProvidersScreen(
                                 Row {
                                     val src = ui.sources.find { it.id == state.sourceId } ?: ui.sources.firstOrNull()
                                     if (src != null) {
-                                        Button(onClick = { viewModel.runSpeedTest(src) }) { Text("Yeniden Dene") }
+                                        Button(onClick = { viewModel.runSpeedTest(src) }) { Text(stringResource(R.string.common_try_again)) }
                                         Spacer(Modifier.width(8.dp))
                                     }
-                                    OutlinedButton(onClick = { viewModel.resetSpeedTest() }) { Text("Kapat") }
+                                    OutlinedButton(onClick = { viewModel.resetSpeedTest() }) { Text(stringResource(R.string.common_done)) }
                                 }
                             }
                         }
@@ -174,13 +174,13 @@ fun ProvidersScreen(
                                 ) {
                                     Column(Modifier.weight(1f)) {
                                         Text(
-                                            "⚡ Sağlayıcı Hız & Bağlantı Tanılaması",
+                                            stringResource(R.string.provider_speed_test_banner_title),
                                             style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.Bold,
                                         )
                                         Spacer(Modifier.height(2.dp))
                                         Text(
-                                            "Ping gecikmesi, indirme hızı (Mbps), oluşturma ve bitiş tarihi ile yayın formatlarını test edin.",
+                                            stringResource(R.string.provider_speed_test_banner_desc),
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
@@ -190,7 +190,7 @@ fun ProvidersScreen(
                                         onClick = { viewModel.runSpeedTest(ui.sources.first()) },
                                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
                                     ) {
-                                        Text("⚡ Hız Testi Başlat", fontWeight = FontWeight.Bold)
+                                        Text(stringResource(R.string.provider_speed_test_start_btn), fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -222,7 +222,7 @@ private fun ProviderRow(
                 .padding(horizontal = if (isPhone) 14.dp else 18.dp, vertical = 14.dp),
         ) {
             if (isPhone) {
-                // Mobile layout: Title & Host on top, Actions on bottom
+                // Mobile layout: Title & Host on top
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(source.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.width(8.dp))
@@ -247,14 +247,25 @@ private fun ProviderRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
+                // 1. Birincil / Kolay Ulaşılabilir Konum: Otomatik, HLS, MPEG-TS format butonları
+                if (source.kind == SourceKind.XTREAM) {
+                    Spacer(Modifier.height(12.dp))
+                    StreamFormatSelector(
+                        selected = source.liveFormat,
+                        onSelect = onSetLiveFormat,
+                        showHint = false,
+                    )
+                }
+
                 Spacer(Modifier.height(10.dp))
 
+                // 2. İkincil Konum: Hız Testi, Düzenle, Kaldır butonları
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     FilledTonalButton(onClick = onRunSpeedTest) {
-                        Text("⚡ Hız Testi")
+                        Text(stringResource(R.string.provider_speed_test_btn))
                     }
                     TextButton(onClick = onEdit) { Text(stringResource(R.string.common_edit)) }
                     TextButton(
@@ -264,8 +275,18 @@ private fun ProviderRow(
                         Text(stringResource(R.string.common_remove))
                     }
                 }
+
+                if (source.kind == SourceKind.XTREAM) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        stringResource(R.string.provider_stream_format_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             } else {
-                // TV layout: Single horizontal row
+                // TV layout:
+                // Üst Satır (Birincil): Sağlayıcı Adı & Host solda, Otomatik / HLS / MPEG-TS butonları sağda
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -293,26 +314,76 @@ private fun ProviderRow(
                         )
                     }
 
-                    FilledTonalButton(onClick = onRunSpeedTest) {
-                        Text("⚡ Hız Testi")
-                    }
-                    Spacer(Modifier.width(6.dp))
-                    TextButton(onClick = onEdit) { Text(stringResource(R.string.common_edit)) }
-                    Spacer(Modifier.width(4.dp))
-                    TextButton(
-                        onClick = onRemove,
-                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                    ) {
-                        Text(stringResource(R.string.common_remove))
+                    if (source.kind == SourceKind.XTREAM) {
+                        // Xtream için birincil kolay ulaşılabilir yerde: Otomatik, HLS, MPEG-TS
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            FormatSegment(
+                                label = stringResource(R.string.provider_stream_format_auto),
+                                selected = source.liveFormat == LiveStreamFormat.AUTO,
+                                onClick = { onSetLiveFormat(LiveStreamFormat.AUTO) },
+                            )
+                            FormatSegment(
+                                label = stringResource(R.string.provider_stream_format_hls),
+                                selected = source.liveFormat == LiveStreamFormat.HLS,
+                                onClick = { onSetLiveFormat(LiveStreamFormat.HLS) },
+                            )
+                            FormatSegment(
+                                label = stringResource(R.string.provider_stream_format_ts),
+                                selected = source.liveFormat == LiveStreamFormat.MPEG_TS,
+                                onClick = { onSetLiveFormat(LiveStreamFormat.MPEG_TS) },
+                            )
+                        }
+                    } else {
+                        // Xtream olmayanlar için Hız Testi, Düzenle, Kaldır
+                        FilledTonalButton(onClick = onRunSpeedTest) {
+                            Text(stringResource(R.string.provider_speed_test_btn))
+                        }
+                        Spacer(Modifier.width(6.dp))
+                        TextButton(onClick = onEdit) { Text(stringResource(R.string.common_edit)) }
+                        Spacer(Modifier.width(4.dp))
+                        TextButton(
+                            onClick = onRemove,
+                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        ) {
+                            Text(stringResource(R.string.common_remove))
+                        }
                     }
                 }
-            }
 
-            // Stream format is an Xtream-panel concept — M3U sources carry their own URLs, so the
-            // choice is meaningless there and hidden.
-            if (source.kind == SourceKind.XTREAM) {
-                Spacer(Modifier.height(14.dp))
-                StreamFormatSelector(selected = source.liveFormat, onSelect = onSetLiveFormat)
+                // Alt Satır (İkincil): Xtream için Hız Testi, Düzenle, Kaldır butonları ve format ipucu
+                if (source.kind == SourceKind.XTREAM) {
+                    Spacer(Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            stringResource(R.string.provider_stream_format_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f).padding(end = 16.dp),
+                        )
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            FilledTonalButton(onClick = onRunSpeedTest) {
+                                Text(stringResource(R.string.provider_speed_test_btn))
+                            }
+                            Spacer(Modifier.width(6.dp))
+                            TextButton(onClick = onEdit) { Text(stringResource(R.string.common_edit)) }
+                            Spacer(Modifier.width(4.dp))
+                            TextButton(
+                                onClick = onRemove,
+                                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                            ) {
+                                Text(stringResource(R.string.common_remove))
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -334,7 +405,7 @@ private fun SpeedTestingCard() {
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    "⚡ Sağlayıcı Bağlantı & Hız Testi Yapılıyor...",
+                    stringResource(R.string.provider_speed_test_running_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -342,7 +413,7 @@ private fun SpeedTestingCard() {
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                "Ping gecikmesi, canlı veri transfer hızı (Mbps), hesap oluşturma/bitiş tarihi ve yayın formatı ölçülüyor. Lütfen bekleyin...",
+                stringResource(R.string.provider_speed_test_running_desc),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -364,18 +435,20 @@ private fun SpeedTestResultCard(
     onDismiss: () -> Unit,
     onRetest: () -> Unit,
 ) {
-    val dateFormatter = remember { SimpleDateFormat("dd.MM.yyyy", Locale("tr", "TR")) }
-    val createdStr = remember(result.createdAtMillis, result.createdAtRaw) {
+    val dateFormatter = remember { SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()) }
+    val unspecifiedStr = stringResource(R.string.provider_date_unspecified)
+    val createdStr = remember(result.createdAtMillis, result.createdAtRaw, unspecifiedStr) {
         when {
             result.createdAtMillis != null && result.createdAtMillis > 0 -> dateFormatter.format(Date(result.createdAtMillis))
             !result.createdAtRaw.isNullOrBlank() -> result.createdAtRaw
-            else -> "Belirtilmemiş"
+            else -> unspecifiedStr
         }
     }
-    val expiryStr = remember(result.expiryMillis) {
+    val unlimitedStr = stringResource(R.string.provider_date_unlimited)
+    val expiryStr = remember(result.expiryMillis, unlimitedStr) {
         when {
             result.expiryMillis != null && result.expiryMillis > 0 -> dateFormatter.format(Date(result.expiryMillis))
-            else -> "Süresiz"
+            else -> unlimitedStr
         }
     }
 
@@ -397,7 +470,7 @@ private fun SpeedTestResultCard(
                     Spacer(Modifier.width(8.dp))
                     Column {
                         Text(
-                            "Sağlayıcı Hız & Bağlantı Tanılama Raporu",
+                            stringResource(R.string.provider_speed_test_report_title),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = Color.White,
@@ -411,8 +484,8 @@ private fun SpeedTestResultCard(
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilledTonalButton(onClick = onRetest) { Text("Yeniden Test Et") }
-                    OutlinedButton(onClick = onDismiss) { Text("Kapat") }
+                    FilledTonalButton(onClick = onRetest) { Text(stringResource(R.string.provider_speed_test_retest)) }
+                    OutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.common_done)) }
                 }
             }
 
@@ -425,12 +498,12 @@ private fun SpeedTestResultCard(
             ) {
                 // Ping Box
                 MetricBox(
-                    title = "GECİKME (PİNG)",
+                    title = stringResource(R.string.provider_metric_ping),
                     value = "${result.pingMs} ms",
                     subtext = when {
-                        result.pingMs < 60 -> "🟢 Mükemmel Tepki"
-                        result.pingMs < 130 -> "🟡 Çok İyi"
-                        else -> "🟠 Normal"
+                        result.pingMs < 60 -> stringResource(R.string.provider_ping_excellent)
+                        result.pingMs < 130 -> stringResource(R.string.provider_ping_good)
+                        else -> stringResource(R.string.provider_ping_normal)
                     },
                     modifier = Modifier.weight(1f),
                     accentColor = Color(0xFF22C55E),
@@ -438,12 +511,12 @@ private fun SpeedTestResultCard(
 
                 // Speed Box
                 MetricBox(
-                    title = "BAĞLANTI HIZI",
+                    title = stringResource(R.string.provider_metric_speed),
                     value = "${result.speedMbps} Mbps",
                     subtext = when {
-                        result.speedMbps >= 30.0 -> "🚀 4K Ultra HD Hazır"
-                        result.speedMbps >= 12.0 -> "✨ Full HD 1080p Hazır"
-                        else -> "📺 SD / 720p Akıcı"
+                        result.speedMbps >= 30.0 -> stringResource(R.string.provider_speed_4k)
+                        result.speedMbps >= 12.0 -> stringResource(R.string.provider_speed_fhd)
+                        else -> stringResource(R.string.provider_speed_sd)
                     },
                     modifier = Modifier.weight(1f),
                     accentColor = Color(0xFF38BDF8),
@@ -451,9 +524,9 @@ private fun SpeedTestResultCard(
 
                 // Account Dates Box
                 MetricBox(
-                    title = "HESAP TARİHLERİ",
+                    title = stringResource(R.string.provider_metric_dates),
                     value = expiryStr,
-                    subtext = "Oluşturma: $createdStr",
+                    subtext = stringResource(R.string.provider_date_created, createdStr),
                     modifier = Modifier.weight(1.2f),
                     accentColor = Color(0xFFA855F7),
                 )
@@ -468,18 +541,18 @@ private fun SpeedTestResultCard(
             ) {
                 // Stream Formats Box
                 MetricBox(
-                    title = "YAYIN FORMATI",
+                    title = stringResource(R.string.provider_metric_format),
                     value = result.streamFormats.joinToString(", ").ifEmpty { "HLS, TS" },
-                    subtext = "Aktif Tercih: ${result.activeLiveFormat.name}",
+                    subtext = stringResource(R.string.provider_active_choice, result.activeLiveFormat.name),
                     modifier = Modifier.weight(1.4f),
                     accentColor = Color(0xFFF59E0B),
                 )
 
                 // Connections & Status Box
                 MetricBox(
-                    title = "BAĞLANTI DURUMU",
-                    value = "${result.activeConnections ?: 1} / ${result.maxConnections ?: 1} Aktif",
-                    subtext = "${result.status} (Çevrimiçi)",
+                    title = stringResource(R.string.provider_metric_status),
+                    value = stringResource(R.string.provider_conns_active, result.activeConnections ?: 1, result.maxConnections ?: 1),
+                    subtext = stringResource(R.string.provider_status_online, result.status),
                     modifier = Modifier.weight(1f),
                     accentColor = Color(0xFF10B981),
                 )
@@ -540,6 +613,7 @@ private fun MetricBox(
 private fun StreamFormatSelector(
     selected: LiveStreamFormat,
     onSelect: (LiveStreamFormat) -> Unit,
+    showHint: Boolean = true,
 ) {
     Column {
         Text(
@@ -565,12 +639,14 @@ private fun StreamFormatSelector(
                 onClick = { onSelect(LiveStreamFormat.MPEG_TS) },
             )
         }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            stringResource(R.string.provider_stream_format_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (showHint) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                stringResource(R.string.provider_stream_format_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

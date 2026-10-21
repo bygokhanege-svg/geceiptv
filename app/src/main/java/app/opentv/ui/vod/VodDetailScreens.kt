@@ -132,7 +132,7 @@ fun MovieDetailScreen(
                 if (isTvPaired) {
                     DetailButton(
                         icon = Icons.Filled.Tv,
-                        label = "TV'ye Gönder",
+                        label = stringResource(R.string.vod_send_to_tv),
                     ) {
                         TvCastHelper.castMediaUrl(context, scope, m.streamUrl, m.displayTitle, false)
                     }
@@ -802,7 +802,7 @@ private fun EpisodeRow(
             ) {
                 Icon(
                     Icons.Filled.Tv,
-                    contentDescription = "TV'ye Gönder",
+                    contentDescription = stringResource(R.string.vod_send_to_tv),
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(20.dp),
                 )

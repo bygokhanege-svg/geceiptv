@@ -122,15 +122,41 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
+import app.opentv.R
 import app.opentv.core.ServiceLocator
 import app.opentv.pairing.QrCodes
+import java.net.Inet4Address
+import java.net.NetworkInterface
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.InetAddress
+import java.nio.ByteBuffer
+import kotlinx.coroutines.channels.Channel
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -156,13 +182,168 @@ fun RemoteScreen() {
     var tvUrl by remember { mutableStateOf(prefs.getString(KEY_TV_URL, "").orEmpty()) }
     var tvToken by remember { mutableStateOf(prefs.getString(KEY_TV_TOKEN, "").orEmpty()) }
 
-    var isConnected by remember { mutableStateOf(tvUrl.isNotBlank()) }
+    var isConnected by remember { mutableStateOf(false) }
+    var isConnecting by remember { mutableStateOf(false) }
+    var isSearchingLan by remember { mutableStateOf(false) }
     var showQrScanner by remember { mutableStateOf(false) }
     var showManualDialog by remember { mutableStateOf(false) }
     var showNumpad by remember { mutableStateOf(false) }
     var searchInput by remember { mutableStateOf("") }
+    var isMouseMode by remember { mutableStateOf(false) }
+    var isTvSearchActive by remember { mutableStateOf(false) }
     var isSendingCmd by remember { mutableStateOf(false) }
     var lastCmdStatus by remember { mutableStateOf<String?>(null) }
+
+    val fastClient = remember {
+        httpClient.newBuilder()
+            .connectTimeout(600, TimeUnit.MILLISECONDS)
+            .readTimeout(600, TimeUnit.MILLISECONDS)
+            .build()
+    }
+
+    suspend fun pingTv(targetUrl: String, token: String): Boolean = withContext(Dispatchers.IO) {
+        if (targetUrl.isBlank()) return@withContext false
+        val endpoint = if (targetUrl.endsWith("/")) "${targetUrl}ping?t=$token" else "$targetUrl/ping?t=$token"
+        try {
+            val req = Request.Builder().url(endpoint).get().build()
+            fastClient.newCall(req).execute().use { res ->
+                if (res.isSuccessful) {
+                    val str = res.body?.string().orEmpty()
+                    isTvSearchActive = str.contains("\"isSearch\":true")
+                    str.contains("\"tv\":true")
+                } else false
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    suspend fun discoverTvOnLan(token: String): String? = withContext(Dispatchers.IO) {
+        val prefix = runCatching {
+            val interfaces = NetworkInterface.getNetworkInterfaces()
+            var foundPrefix: String? = null
+            for (intf in interfaces) {
+                if (intf.isLoopback || !intf.isUp) continue
+                for (addr in intf.inetAddresses) {
+                    if (!addr.isLoopbackAddress && addr is Inet4Address) {
+                        val host = addr.hostAddress ?: continue
+                        if (host.startsWith("192.168.") || host.startsWith("10.") || host.startsWith("172.")) {
+                            val lastDot = host.lastIndexOf('.')
+                            if (lastDot != -1) {
+                                foundPrefix = host.substring(0, lastDot + 1)
+                                break
+                            }
+                        }
+                    }
+                }
+                if (foundPrefix != null) break
+            }
+            foundPrefix
+        }.getOrNull() ?: return@withContext null
+
+        val scanClient = httpClient.newBuilder()
+            .connectTimeout(300, TimeUnit.MILLISECONDS)
+            .readTimeout(300, TimeUnit.MILLISECONDS)
+            .build()
+
+        for (batch in (1..254).chunked(25)) {
+            val jobs = batch.map { i ->
+                async(Dispatchers.IO) {
+                    val candidate = "http://${prefix}${i}:8765"
+                    val endpoint = "$candidate/ping?t=$token"
+                    try {
+                        val req = Request.Builder().url(endpoint).get().build()
+                        scanClient.newCall(req).execute().use { res ->
+                            if (res.isSuccessful) {
+                                val body = res.body?.string().orEmpty()
+                                if (body.contains("\"tv\":true") && (token.isBlank() || body.contains("\"validToken\":true"))) {
+                                    candidate
+                                } else null
+                            } else null
+                        }
+                    } catch (_: Exception) {
+                        null
+                    }
+                }
+            }
+            val match = jobs.awaitAll().firstOrNull { it != null }
+            if (match != null) return@withContext match
+        }
+        null
+    }
+
+    // Auto-connect loop: If previously paired, automatically establish LAN connection whenever apps are open
+    LaunchedEffect(tvToken) {
+        if (tvUrl.isBlank() && tvToken.isBlank()) return@LaunchedEffect
+        while (isActive) {
+            if (!isConnected) {
+                isConnecting = true
+                var alive = false
+                if (tvUrl.isNotBlank()) {
+                    alive = pingTv(tvUrl, tvToken)
+                }
+                if (!alive && tvToken.isNotBlank()) {
+                    isSearchingLan = true
+                    val found = discoverTvOnLan(tvToken)
+                    isSearchingLan = false
+                    if (found != null) {
+                        tvUrl = found
+                        prefs.edit().putString(KEY_TV_URL, found).apply()
+                        alive = true
+                    }
+                }
+                isConnected = alive
+                isConnecting = false
+            } else {
+                val alive = pingTv(tvUrl, tvToken)
+                if (!alive) {
+                    isConnected = false
+                }
+            }
+            delay(if (isConnected) 15_000L else 5_000L)
+        }
+    }
+
+    val tvHost = remember(tvUrl) {
+        val raw = tvUrl.removePrefix("http://").removePrefix("https://")
+        raw.substringBefore(':').substringBefore('/').trim()
+    }
+    var targetAddress by remember { mutableStateOf<InetAddress?>(null) }
+
+    LaunchedEffect(tvHost) {
+        if (tvHost.isNotBlank()) {
+            withContext(Dispatchers.IO) {
+                targetAddress = runCatching { InetAddress.getByName(tvHost) }.getOrNull()
+            }
+        } else {
+            targetAddress = null
+        }
+    }
+
+    val udpSocket = remember { runCatching { DatagramSocket() }.getOrNull() }
+    DisposableEffect(Unit) {
+        onDispose {
+            runCatching { udpSocket?.close() }
+        }
+    }
+
+    val mouseChannel = remember { Channel<Pair<Float, Float>>(capacity = Channel.CONFLATED) }
+
+    LaunchedEffect(targetAddress) {
+        val addr = targetAddress ?: return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            for ((dx, dy) in mouseChannel) {
+                try {
+                    val buf = ByteBuffer.allocate(9)
+                    buf.put(1.toByte()) // type 1: Move
+                    buf.putFloat(dx)
+                    buf.putFloat(dy)
+                    val packet = DatagramPacket(buf.array(), 9, addr, 8766)
+                    udpSocket?.send(packet)
+                } catch (_: Exception) {}
+            }
+        }
+    }
 
     fun vibrateDevice() {
         try {
@@ -181,6 +362,94 @@ fun RemoteScreen() {
                 vibrator?.vibrate(30)
             }
         } catch (_: Exception) {}
+    }
+
+    fun sendCommand(cmd: String, value: String? = null) {
+        if (tvUrl.isBlank()) return
+        vibrateDevice()
+        isSendingCmd = true
+
+        coroutineScope.launch(Dispatchers.IO) {
+            try {
+                val endpoint = if (tvUrl.endsWith("/")) "${tvUrl}remote?t=$tvToken" else "$tvUrl/remote?t=$tvToken"
+                val body = buildString {
+                    append("{\"cmd\":\"").append(cmd).append("\"")
+                    if (value != null) {
+                        append(",\"value\":\"").append(value.replace("\"", "\\\"")).append("\"")
+                    }
+                    append("}")
+                }
+                val req = Request.Builder()
+                    .url(endpoint)
+                    .post(body.toRequestBody("application/json".toMediaType()))
+                    .build()
+
+                httpClient.newCall(req).execute().use { res ->
+                    withContext(Dispatchers.Main) {
+                        isSendingCmd = false
+                        if (!res.isSuccessful) {
+                            lastCmdStatus = "Hata: HTTP ${res.code}"
+                        } else {
+                            lastCmdStatus = null
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    isSendingCmd = false
+                    lastCmdStatus = "Bağlantı koptu"
+                }
+            }
+        }
+    }
+
+    fun sendMouseClick() {
+        vibrateDevice()
+        coroutineScope.launch(Dispatchers.IO) {
+            val addr = targetAddress
+            if (addr != null && udpSocket != null) {
+                try {
+                    val buf = byteArrayOf(2.toByte()) // type 2: Click
+                    val packet = DatagramPacket(buf, 1, addr, 8766)
+                    udpSocket.send(packet)
+                    return@launch
+                } catch (_: Exception) {}
+            }
+            sendCommand("mouse_click")
+        }
+    }
+
+    fun sendMouseBack() {
+        vibrateDevice()
+        coroutineScope.launch(Dispatchers.IO) {
+            val addr = targetAddress
+            if (addr != null && udpSocket != null) {
+                try {
+                    val buf = byteArrayOf(4.toByte()) // type 4: Back
+                    val packet = DatagramPacket(buf, 1, addr, 8766)
+                    udpSocket.send(packet)
+                    return@launch
+                } catch (_: Exception) {}
+            }
+            sendCommand("back")
+        }
+    }
+
+    fun toggleMouseMode() {
+        val next = !isMouseMode
+        isMouseMode = next
+        vibrateDevice()
+        coroutineScope.launch(Dispatchers.IO) {
+            val addr = targetAddress
+            if (addr != null && udpSocket != null) {
+                try {
+                    val type = if (next) 5.toByte() else 6.toByte()
+                    val packet = DatagramPacket(byteArrayOf(type), 1, addr, 8766)
+                    udpSocket.send(packet)
+                } catch (_: Exception) {}
+            }
+            sendCommand(if (next) "mouse_activate" else "mouse_hide")
+        }
     }
 
     fun parseAndConnect(rawQr: String) {
@@ -223,50 +492,10 @@ fun RemoteScreen() {
             showQrScanner = false
             showManualDialog = false
             vibrateDevice()
-            Toast.makeText(context, "✓ Televizyona Bağlandı!", Toast.LENGTH_SHORT).show()
-            // Görev 3: Telefondaki sağlayıcıları otomatik olarak TV ile eşleşince TV'ye aktar
-            TvCastHelper.syncSourcesToTv(context, coroutineScope, hostBase, token)
+            Toast.makeText(context, context.getString(R.string.remote_toast_connected), Toast.LENGTH_SHORT).show()
+            // Not: Sağlayıcılar otomatik senkronize edilmez. Sadece kullanıcı 'Sağlayıcıları Eşitle' butonuna tıklayınca senkronize edilir.
         } else {
-            Toast.makeText(context, "Geçersiz QR kodu veya IP formatı.", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    fun sendCommand(cmd: String, value: String? = null) {
-        if (tvUrl.isBlank()) return
-        vibrateDevice()
-        isSendingCmd = true
-
-        coroutineScope.launch(Dispatchers.IO) {
-            try {
-                val endpoint = if (tvUrl.endsWith("/")) "${tvUrl}remote?t=$tvToken" else "$tvUrl/remote?t=$tvToken"
-                val body = buildString {
-                    append("{\"cmd\":\"").append(cmd).append("\"")
-                    if (value != null) {
-                        append(",\"value\":\"").append(value.replace("\"", "\\\"")).append("\"")
-                    }
-                    append("}")
-                }
-                val req = Request.Builder()
-                    .url(endpoint)
-                    .post(body.toRequestBody("application/json".toMediaType()))
-                    .build()
-
-                httpClient.newCall(req).execute().use { res ->
-                    withContext(Dispatchers.Main) {
-                        isSendingCmd = false
-                        if (!res.isSuccessful) {
-                            lastCmdStatus = "Hata: HTTP ${res.code}"
-                        } else {
-                            lastCmdStatus = null
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    isSendingCmd = false
-                    lastCmdStatus = "Bağlantı koptu"
-                }
-            }
+            Toast.makeText(context, context.getString(R.string.remote_toast_invalid_qr), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -310,7 +539,7 @@ fun RemoteScreen() {
                     Spacer(Modifier.width(10.dp))
                     Column {
                         Text(
-                            "GECE TV Kumandası",
+                            stringResource(R.string.remote_title),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = Color.White,
@@ -320,18 +549,34 @@ fun RemoteScreen() {
                                 modifier = Modifier
                                     .size(8.dp)
                                     .clip(CircleShape)
-                                    .background(if (isConnected) Color(0xFF10B981) else Color(0xFFEF4444))
+                                    .background(
+                                        when {
+                                            isConnected -> Color(0xFF10B981)
+                                            isSearchingLan || isConnecting -> Color(0xFFF59E0B)
+                                            tvToken.isNotBlank() -> Color(0xFFFBBF24)
+                                            else -> Color(0xFFEF4444)
+                                        }
+                                    )
                             )
                             Spacer(Modifier.width(6.dp))
                             Text(
-                                if (isConnected) {
-                                    val displayHost = tvUrl.removePrefix("http://").removePrefix("https://").take(22)
-                                    "Bağlı: $displayHost"
-                                } else {
-                                    "Televizyon Bağlı Değil"
+                                when {
+                                    isConnected -> {
+                                        val displayHost = tvUrl.removePrefix("http://").removePrefix("https://").take(22)
+                                        stringResource(R.string.remote_connected, displayHost)
+                                    }
+                                    isSearchingLan -> stringResource(R.string.remote_scanning)
+                                    isConnecting -> stringResource(R.string.remote_connecting_status)
+                                    tvToken.isNotBlank() -> stringResource(R.string.remote_waiting_tv)
+                                    else -> stringResource(R.string.remote_not_connected)
                                 },
                                 fontSize = 11.sp,
-                                color = if (isConnected) Color(0xFF34D399) else Color(0xFFF87171),
+                                color = when {
+                                    isConnected -> Color(0xFF34D399)
+                                    isSearchingLan || isConnecting -> Color(0xFFFBBF24)
+                                    tvToken.isNotBlank() -> Color(0xFFFCD34D)
+                                    else -> Color(0xFFF87171)
+                                },
                             )
                         }
                     }
@@ -351,9 +596,9 @@ fun RemoteScreen() {
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(Icons.Default.QrCodeScanner, contentDescription = "QR Tara", tint = Color(0xFF60A5FA), modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.QrCodeScanner, contentDescription = stringResource(R.string.remote_btn_qr_scan), tint = Color(0xFF60A5FA), modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text(if (isConnected) "Değiştir" else "QR Okut", fontSize = 12.sp, color = Color(0xFF93C5FD), fontWeight = FontWeight.SemiBold)
+                            Text(if (isConnected) stringResource(R.string.remote_btn_qr_change) else stringResource(R.string.remote_btn_qr_scan), fontSize = 12.sp, color = Color(0xFF93C5FD), fontWeight = FontWeight.SemiBold)
                         }
                     }
 
@@ -368,14 +613,14 @@ fun RemoteScreen() {
                                 .background(Color(0x33EF4444))
                                 .border(1.dp, Color(0x66EF4444), CircleShape),
                         ) {
-                            Icon(Icons.Default.PowerSettingsNew, contentDescription = "Güç", tint = Color(0xFFF87171), modifier = Modifier.size(20.dp))
+                            Icon(Icons.Default.PowerSettingsNew, contentDescription = stringResource(R.string.remote_btn_power), tint = Color(0xFFF87171), modifier = Modifier.size(20.dp))
                         }
                     }
                 }
             }
 
             if (!isConnected) {
-                // Not Connected State: Welcome & QR Prompt Card
+                // Not Connected State: TV Search & QR Prompt Card
                 Spacer(Modifier.height(16.dp))
                 Card(
                     modifier = Modifier
@@ -397,18 +642,31 @@ fun RemoteScreen() {
                                 .border(1.dp, Color(0x443B82F6), CircleShape),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Icon(
-                                Icons.Default.QrCodeScanner,
-                                contentDescription = null,
-                                tint = Color(0xFF60A5FA),
-                                modifier = Modifier.size(36.dp),
-                            )
+                            if (isConnecting || isSearchingLan) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(36.dp),
+                                    color = Color(0xFF60A5FA),
+                                    strokeWidth = 3.dp,
+                                )
+                            } else {
+                                Icon(
+                                    if (tvToken.isNotBlank()) Icons.Default.Wifi else Icons.Default.QrCodeScanner,
+                                    contentDescription = null,
+                                    tint = Color(0xFF60A5FA),
+                                    modifier = Modifier.size(36.dp),
+                                )
+                            }
                         }
 
                         Spacer(Modifier.height(16.dp))
 
                         Text(
-                            "Telefonunuzu Kumandaya Dönüştürün",
+                            when {
+                                isSearchingLan -> stringResource(R.string.remote_lan_scanning)
+                                isConnecting -> stringResource(R.string.remote_connecting)
+                                tvToken.isNotBlank() -> stringResource(R.string.remote_waiting_tv)
+                                else -> stringResource(R.string.remote_card_title_ready)
+                            },
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = Color.White,
@@ -418,31 +676,87 @@ fun RemoteScreen() {
                         Spacer(Modifier.height(8.dp))
 
                         Text(
-                            "Televizyonunuzda Ayarlar > Telefon ile Yönet (Web Yönetimi) menüsündeki QR kodu okutarak kumanda moduna geçebilirsiniz.",
+                            when {
+                                tvToken.isNotBlank() -> stringResource(R.string.remote_card_desc_paired)
+                                else -> stringResource(R.string.remote_card_desc_unpaired)
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = Color(0xFF94A3B8),
                             textAlign = TextAlign.Center,
                             lineHeight = 18.sp,
                         )
 
-                        Spacer(Modifier.height(24.dp))
+                        Spacer(Modifier.height(20.dp))
 
-                        Button(
-                            onClick = { showQrScanner = true },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(50.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF2563EB),
-                            ),
-                            shape = RoundedCornerShape(14.dp),
-                        ) {
-                            Icon(Icons.Default.CameraAlt, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(10.dp))
-                            Text("Kamera ile QR Kodu Tara", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        if (tvToken.isNotBlank()) {
+                            Button(
+                                onClick = {
+                                    coroutineScope.launch {
+                                        isConnecting = true
+                                        var ok = false
+                                        if (tvUrl.isNotBlank()) {
+                                            ok = pingTv(tvUrl, tvToken)
+                                        }
+                                        if (!ok && tvToken.isNotBlank()) {
+                                            isSearchingLan = true
+                                            val found = discoverTvOnLan(tvToken)
+                                            isSearchingLan = false
+                                            if (found != null) {
+                                                tvUrl = found
+                                                prefs.edit().putString(KEY_TV_URL, found).apply()
+                                                ok = true
+                                            }
+                                        }
+                                        isConnected = ok
+                                        isConnecting = false
+                                        if (ok) {
+                                            Toast.makeText(context, context.getString(R.string.remote_toast_connected), Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            Toast.makeText(context, context.getString(R.string.remote_toast_not_found), Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
+                                shape = RoundedCornerShape(14.dp),
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text(stringResource(R.string.remote_reconnect_now), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+
+                            Spacer(Modifier.height(10.dp))
+
+                            OutlinedButton(
+                                onClick = { showQrScanner = true },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(44.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, Color(0x443B82F6)),
+                            ) {
+                                Icon(Icons.Default.QrCodeScanner, contentDescription = null, tint = Color(0xFF60A5FA), modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text(stringResource(R.string.remote_scan_different_tv), fontSize = 13.sp, color = Color(0xFF93C5FD))
+                            }
+                        } else {
+                            Button(
+                                onClick = { showQrScanner = true },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(50.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
+                                shape = RoundedCornerShape(14.dp),
+                            ) {
+                                Icon(Icons.Default.CameraAlt, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.width(10.dp))
+                                Text(stringResource(R.string.remote_scan_qr_camera), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
                         }
 
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(10.dp))
 
                         Surface(
                             modifier = Modifier
@@ -451,24 +765,11 @@ fun RemoteScreen() {
                             color = Color.Transparent,
                         ) {
                             Text(
-                                "Veya TV IP Adresi ile Manuel Bağlan ›",
-                                fontSize = 13.sp,
+                                stringResource(R.string.remote_manual_ip_link),
+                                fontSize = 12.sp,
                                 color = Color(0xFF60A5FA),
                                 modifier = Modifier.padding(vertical = 6.dp, horizontal = 10.dp),
                             )
-                        }
-
-                        if (tvUrl.isNotBlank()) {
-                            Spacer(Modifier.height(8.dp))
-                            Button(
-                                onClick = { isConnected = true },
-                                modifier = Modifier.fillMaxWidth().height(44.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0x2210B981)),
-                                border = BorderStroke(1.dp, Color(0x4410B981)),
-                                shape = RoundedCornerShape(12.dp),
-                            ) {
-                                Text("Son Bağlantıyı Kullan ($tvUrl)", fontSize = 13.sp, color = Color(0xFF34D399))
-                            }
                         }
                     }
                 }
@@ -494,7 +795,7 @@ fun RemoteScreen() {
                         OutlinedTextField(
                             value = searchInput,
                             onValueChange = { searchInput = it },
-                            placeholder = { Text("TV'ye metin veya arama gönder…", fontSize = 13.sp, color = Color(0xFF64748B)) },
+                            placeholder = { Text(stringResource(R.string.remote_send_text_hint), fontSize = 13.sp, color = Color(0xFF64748B)) },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                             keyboardActions = KeyboardActions(onSend = {
@@ -520,14 +821,14 @@ fun RemoteScreen() {
                             },
                             modifier = Modifier.size(36.dp),
                         ) {
-                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Gönder", tint = Color(0xFF3B82F6), modifier = Modifier.size(18.dp))
+                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = stringResource(R.string.remote_send), tint = Color(0xFF3B82F6), modifier = Modifier.size(18.dp))
                         }
                     }
                 }
 
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(12.dp))
 
-                // Görev 6: Kumanda bölümüne TV kısa yol tuşları (Canlı TV, Film, Dizi, Anasayfa, Sağlayıcıları Eşitle)
+                // TV Shortcuts Row (Canlı TV, Film, Dizi, Anasayfa, Sağlayıcıları Eşitle)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -537,31 +838,31 @@ fun RemoteScreen() {
                 ) {
                     TvShortcutChip(
                         icon = Icons.Default.Tv,
-                        label = "Canlı TV",
+                        label = stringResource(R.string.remote_nav_live),
                         color = Color(0xFFEF4444),
                         onClick = { sendCommand("nav_live") }
                     )
                     TvShortcutChip(
                         icon = Icons.Default.PlayArrow,
-                        label = "Film",
+                        label = stringResource(R.string.remote_nav_movies),
                         color = Color(0xFF8B5CF6),
                         onClick = { sendCommand("nav_movies") }
                     )
                     TvShortcutChip(
                         icon = Icons.Default.Tv,
-                        label = "Dizi",
+                        label = stringResource(R.string.remote_nav_shows),
                         color = Color(0xFF3B82F6),
                         onClick = { sendCommand("nav_shows") }
                     )
                     TvShortcutChip(
                         icon = Icons.Default.Home,
-                        label = "Anasayfa",
+                        label = stringResource(R.string.remote_nav_home),
                         color = Color(0xFF10B981),
                         onClick = { sendCommand("home") }
                     )
                     TvShortcutChip(
                         icon = Icons.Default.Refresh,
-                        label = "Sağlayıcıları Eşitle",
+                        label = stringResource(R.string.remote_sync_sources),
                         color = Color(0xFFF59E0B),
                         onClick = {
                             TvCastHelper.syncSourcesToTv(context, coroutineScope, tvUrl, tvToken)
@@ -569,210 +870,219 @@ fun RemoteScreen() {
                     )
                 }
 
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(14.dp))
 
-                // Navigation D-Pad (Circular Obsidian Controller Wheel)
-                Box(
-                    modifier = Modifier
-                        .size(240.dp)
-                        .clip(CircleShape)
-                        .background(
-                            Brush.radialGradient(
-                                listOf(Color(0xFF1E2846), Color(0xFF0F1526))
-                            )
-                        )
-                        .border(2.dp, Color(0x333B82F6), CircleShape)
-                        .shadow(12.dp, CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    // UP Button
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .padding(top = 8.dp)
-                            .size(70.dp, 60.dp)
-                            .clip(RoundedCornerShape(30.dp))
-                            .clickable { sendCommand("up") },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Yukarı", tint = Color.White, modifier = Modifier.size(34.dp))
-                    }
-
-                    // DOWN Button
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(bottom = 8.dp)
-                            .size(70.dp, 60.dp)
-                            .clip(RoundedCornerShape(30.dp))
-                            .clickable { sendCommand("down") },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Aşağı", tint = Color.White, modifier = Modifier.size(34.dp))
-                    }
-
-                    // LEFT Button
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.CenterStart)
-                            .padding(start = 8.dp)
-                            .size(60.dp, 70.dp)
-                            .clip(RoundedCornerShape(30.dp))
-                            .clickable { sendCommand("left") },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Sol", tint = Color.White, modifier = Modifier.size(34.dp))
-                    }
-
-                    // RIGHT Button
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .padding(end = 8.dp)
-                            .size(60.dp, 70.dp)
-                            .clip(RoundedCornerShape(30.dp))
-                            .clickable { sendCommand("right") },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Sağ", tint = Color.White, modifier = Modifier.size(34.dp))
-                    }
-
-                    // CENTER OK BUTTON
-                    Box(
-                        modifier = Modifier
-                            .size(80.dp)
-                            .clip(CircleShape)
-                            .background(
-                                Brush.linearGradient(
-                                    listOf(Color(0xFF2563EB), Color(0xFF1D4ED8))
-                                )
-                            )
-                            .border(2.dp, Color(0xFF60A5FA), CircleShape)
-                            .clickable { sendCommand("ok") },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text("OK", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, color = Color.White)
-                    }
-                }
-
-                Spacer(Modifier.height(18.dp))
-
-                // Core Navigation Buttons (BACK, HOME, MENU)
+                // Quick Navigation & Media Controls Bar (Geri, Oynat/Duraklat, Sessiz, Rehber, Fare, Sayılar)
                 Row(
-                    modifier = Modifier.fillMaxWidth(0.9f),
-                    horizontalArrangement = Arrangement.SpaceAround,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color(0xFF111728))
+                        .border(1.dp, Color(0x22FFFFFF), RoundedCornerShape(16.dp))
+                        .padding(vertical = 8.dp, horizontal = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     RemoteIconButton(
                         icon = Icons.AutoMirrored.Filled.ArrowBack,
-                        label = "Geri",
+                        label = stringResource(R.string.remote_btn_back),
                         onClick = { sendCommand("back") },
                     )
                     RemoteIconButton(
-                        icon = Icons.Default.Home,
-                        label = "Ana Menü",
-                        onClick = { sendCommand("home") },
+                        icon = Icons.Default.PlayArrow,
+                        label = stringResource(R.string.remote_btn_play_pause),
+                        onClick = { sendCommand("play_pause") },
+                    )
+                    RemoteIconButton(
+                        icon = Icons.AutoMirrored.Filled.VolumeMute,
+                        label = stringResource(R.string.remote_btn_mute),
+                        onClick = { sendCommand("mute") },
                     )
                     RemoteIconButton(
                         icon = Icons.Default.Menu,
-                        label = "Rehber",
+                        label = stringResource(R.string.remote_btn_guide),
                         onClick = { sendCommand("ok") },
+                    )
+                    RemoteIconButton(
+                        customIcon = { MouseIcon(tint = if (isMouseMode) Color.White else Color(0xFF60A5FA)) },
+                        label = if (isMouseMode) stringResource(R.string.remote_btn_mouse_on) else stringResource(R.string.remote_btn_mouse),
+                        highlighted = isMouseMode,
+                        onClick = { toggleMouseMode() },
+                    )
+                    RemoteIconButton(
+                        icon = Icons.Default.Dialpad,
+                        label = stringResource(R.string.remote_btn_numpad),
+                        highlighted = showNumpad,
+                        onClick = { showNumpad = !showNumpad },
                     )
                 }
 
-                Spacer(Modifier.height(18.dp))
+                Spacer(Modifier.height(16.dp))
 
-                // Volume & Channel Vertical Rockers
-                Row(
-                    modifier = Modifier.fillMaxWidth(0.9f),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    // Volume Column (Pill shape)
-                    Column(
+                if (isMouseMode) {
+                    MouseTouchpadAndKeyboardSection(
+                        mouseChannel = mouseChannel,
+                        onLeftClick = { sendMouseClick() },
+                        onRightClick = { sendMouseBack() },
+                        onExitMouseMode = { toggleMouseMode() },
+                        isTvSearchActive = isTvSearchActive,
+                        onSendSearch = { query ->
+                            if (query.isNotBlank()) {
+                                sendCommand("search", query)
+                            }
+                        },
+                    )
+                } else {
+                    // Ergonomic Controller Row: SOLUNDA SES, AŞŞADA JOYSTICK YUVARLAĞI (SAĞ BAŞ PARMAĞIN ULAŞACAĞI YERDE), SAĞINDA KANAL
+                    Row(
                         modifier = Modifier
-                            .width(68.dp)
-                            .clip(RoundedCornerShape(34.dp))
-                            .background(Color(0xFF161F38))
-                            .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(34.dp))
-                            .padding(vertical = 8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        IconButton(onClick = { sendCommand("vol_up") }) {
-                            Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = "Ses Aç", tint = Color.White)
-                        }
-                        Text("SES", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF94A3B8))
-                        IconButton(onClick = { sendCommand("vol_down") }) {
-                            Icon(Icons.AutoMirrored.Filled.VolumeDown, contentDescription = "Ses Kıs", tint = Color.White)
-                        }
-                    }
-
-                    // Center Control Buttons (Mute & Play/Pause & Numpad Toggle)
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        // Play / Pause
-                        Surface(
+                        // 1. SOLUNDA SES (Volume Pill Rocker)
+                        Column(
                             modifier = Modifier
-                                .size(56.dp)
-                                .clip(CircleShape)
-                                .clickable { sendCommand("play_pause") },
-                            color = Color(0xFF1E293B),
-                            border = BorderStroke(1.dp, Color(0x443B82F6)),
-                            shape = CircleShape,
+                                .width(62.dp)
+                                .clip(RoundedCornerShape(31.dp))
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(Color(0xFF161F38), Color(0xFF0F172A))
+                                    )
+                                )
+                                .border(1.dp, Color(0x333B82F6), RoundedCornerShape(31.dp))
+                                .padding(vertical = 10.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(Icons.Default.PlayArrow, contentDescription = "Oynat/Duraklat", tint = Color(0xFF60A5FA), modifier = Modifier.size(28.dp))
+                            IconButton(
+                                onClick = { sendCommand("vol_up") },
+                                modifier = Modifier.size(46.dp),
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = stringResource(R.string.remote_vol_up), tint = Color.White, modifier = Modifier.size(24.dp))
+                            }
+                            Text(stringResource(R.string.remote_vol_title), fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF60A5FA), letterSpacing = 1.sp)
+                            IconButton(
+                                onClick = { sendCommand("vol_down") },
+                                modifier = Modifier.size(46.dp),
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.VolumeDown, contentDescription = stringResource(R.string.remote_vol_down), tint = Color.White, modifier = Modifier.size(24.dp))
                             }
                         }
 
-                        // Mute
-                        Surface(
+                        // 2. AŞŞADA JOYSTICK YUVARLAĞI (Center D-Pad Wheel for Natural Right-Hand Thumb Reach)
+                        Box(
                             modifier = Modifier
-                                .size(44.dp)
+                                .size(208.dp)
                                 .clip(CircleShape)
-                                .clickable { sendCommand("mute") },
-                            color = Color(0xFF1A2234),
-                            border = BorderStroke(1.dp, Color(0x22FFFFFF)),
-                            shape = CircleShape,
+                                .background(
+                                    Brush.radialGradient(
+                                        listOf(Color(0xFF1E2846), Color(0xFF0A0F1D))
+                                    )
+                                )
+                                .border(2.dp, Brush.linearGradient(listOf(Color(0xFF3B82F6), Color(0xFF1D4ED8))), CircleShape)
+                                .shadow(16.dp, CircleShape),
+                            contentAlignment = Alignment.Center,
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(Icons.AutoMirrored.Filled.VolumeMute, contentDescription = "Sessiz", tint = Color(0xFFCBD5E1), modifier = Modifier.size(20.dp))
+                            // UP Button
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .padding(top = 4.dp)
+                                    .size(70.dp, 56.dp)
+                                    .clip(RoundedCornerShape(28.dp))
+                                    .clickable { sendCommand("up") },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(Icons.Default.KeyboardArrowUp, contentDescription = stringResource(R.string.remote_dpad_up), tint = Color.White, modifier = Modifier.size(34.dp))
+                            }
+
+                            // DOWN Button
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .padding(bottom = 4.dp)
+                                    .size(70.dp, 56.dp)
+                                    .clip(RoundedCornerShape(28.dp))
+                                    .clickable { sendCommand("down") },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(Icons.Default.KeyboardArrowDown, contentDescription = stringResource(R.string.remote_dpad_down), tint = Color.White, modifier = Modifier.size(34.dp))
+                            }
+
+                            // LEFT Button
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.CenterStart)
+                                    .padding(start = 4.dp)
+                                    .size(56.dp, 70.dp)
+                                    .clip(RoundedCornerShape(28.dp))
+                                    .clickable { sendCommand("left") },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = stringResource(R.string.remote_dpad_left), tint = Color.White, modifier = Modifier.size(34.dp))
+                            }
+
+                            // RIGHT Button
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.CenterEnd)
+                                    .padding(end = 4.dp)
+                                    .size(56.dp, 70.dp)
+                                    .clip(RoundedCornerShape(28.dp))
+                                    .clickable { sendCommand("right") },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = stringResource(R.string.remote_dpad_right), tint = Color.White, modifier = Modifier.size(34.dp))
+                            }
+
+                            // CENTER OK BUTTON (Direct Thumb Action)
+                            Box(
+                                modifier = Modifier
+                                    .size(74.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        Brush.linearGradient(
+                                            listOf(Color(0xFF2563EB), Color(0xFF1D4ED8))
+                                        )
+                                    )
+                                    .border(2.dp, Color(0xFF60A5FA), CircleShape)
+                                    .clickable { sendCommand("ok") },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(stringResource(R.string.remote_dpad_ok), fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, color = Color.White)
                             }
                         }
 
-                        // Numpad Toggle Button
-                        Surface(
+                        // 3. SAĞINDA KANAL (Channel Pill Rocker)
+                        Column(
                             modifier = Modifier
-                                .size(44.dp)
-                                .clip(CircleShape)
-                                .clickable { showNumpad = !showNumpad },
-                            color = if (showNumpad) Color(0xFF2563EB) else Color(0xFF1A2234),
-                            border = BorderStroke(1.dp, if (showNumpad) Color(0xFF60A5FA) else Color(0x22FFFFFF)),
-                            shape = CircleShape,
+                                .width(62.dp)
+                                .clip(RoundedCornerShape(31.dp))
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(Color(0xFF161F38), Color(0xFF0F172A))
+                                    )
+                                )
+                                .border(1.dp, Color(0x333B82F6), RoundedCornerShape(31.dp))
+                                .padding(vertical = 10.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(Icons.Default.Dialpad, contentDescription = "Sayılar", tint = Color.White, modifier = Modifier.size(18.dp))
+                            IconButton(
+                                onClick = { sendCommand("ch_up") },
+                                modifier = Modifier.size(46.dp),
+                            ) {
+                                Icon(Icons.Default.ArrowUpward, contentDescription = stringResource(R.string.remote_ch_up), tint = Color.White, modifier = Modifier.size(24.dp))
                             }
-                        }
-                    }
-
-                    // Channel Column (Pill shape)
-                    Column(
-                        modifier = Modifier
-                            .width(68.dp)
-                            .clip(RoundedCornerShape(34.dp))
-                            .background(Color(0xFF161F38))
-                            .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(34.dp))
-                            .padding(vertical = 8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        IconButton(onClick = { sendCommand("ch_up") }) {
-                            Icon(Icons.Default.ArrowUpward, contentDescription = "Kanal İleri", tint = Color.White)
-                        }
-                        Text("KANAL", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF94A3B8))
-                        IconButton(onClick = { sendCommand("ch_down") }) {
-                            Icon(Icons.Default.ArrowDownward, contentDescription = "Kanal Geri", tint = Color.White)
+                            Text(stringResource(R.string.remote_ch_title), fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF60A5FA), letterSpacing = 0.5.sp)
+                            IconButton(
+                                onClick = { sendCommand("ch_down") },
+                                modifier = Modifier.size(46.dp),
+                            ) {
+                                Icon(Icons.Default.ArrowDownward, contentDescription = stringResource(R.string.remote_ch_down), tint = Color.White, modifier = Modifier.size(24.dp))
+                            }
                         }
                     }
                 }
@@ -785,7 +1095,7 @@ fun RemoteScreen() {
                 ) {
                     Column(
                         modifier = Modifier
-                            .fillMaxWidth(0.9f)
+                            .fillMaxWidth(0.95f)
                             .padding(top = 16.dp)
                             .clip(RoundedCornerShape(20.dp))
                             .background(Color(0xFF111728))
@@ -793,7 +1103,7 @@ fun RemoteScreen() {
                             .padding(14.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Text("Kanal Numarası Tuşla", fontSize = 12.sp, color = Color(0xFF94A3B8), fontWeight = FontWeight.SemiBold)
+                        Text(stringResource(R.string.remote_numpad_title), fontSize = 12.sp, color = Color(0xFF94A3B8), fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.height(10.dp))
                         val numbers = listOf(
                             listOf("1", "2", "3"),
@@ -859,14 +1169,14 @@ fun RemoteScreen() {
                     modifier = Modifier.padding(22.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text("TV IP Adresini Girin", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text(stringResource(R.string.remote_dialog_manual_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
                     Spacer(Modifier.height(8.dp))
-                    Text("Televizyon ekranında yazan adresi veya IP'yi girin (Örn: 192.168.1.35:45678/?t=abc)", fontSize = 12.sp, color = Color(0xFF94A3B8), textAlign = TextAlign.Center)
+                    Text(stringResource(R.string.remote_dialog_manual_desc), fontSize = 12.sp, color = Color(0xFF94A3B8), textAlign = TextAlign.Center)
                     Spacer(Modifier.height(14.dp))
                     OutlinedTextField(
                         value = manualInput,
                         onValueChange = { manualInput = it },
-                        placeholder = { Text("http://192.168.1.X:PORT/?t=TOKEN", fontSize = 12.sp) },
+                        placeholder = { Text(stringResource(R.string.remote_dialog_ip_hint), fontSize = 12.sp) },
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.White,
@@ -884,7 +1194,7 @@ fun RemoteScreen() {
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp),
                         ) {
-                            Text("İptal", color = Color(0xFF94A3B8))
+                            Text(stringResource(R.string.common_cancel), color = Color(0xFF94A3B8))
                         }
                         Button(
                             onClick = {
@@ -894,7 +1204,7 @@ fun RemoteScreen() {
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp),
                         ) {
-                            Text("Bağlan", fontWeight = FontWeight.Bold, color = Color.White)
+                            Text(stringResource(R.string.remote_btn_connect), fontWeight = FontWeight.Bold, color = Color.White)
                         }
                     }
                 }
@@ -905,26 +1215,374 @@ fun RemoteScreen() {
 
 @Composable
 private fun RemoteIconButton(
-    icon: ImageVector,
+    icon: ImageVector? = null,
+    customIcon: (@Composable () -> Unit)? = null,
     label: String,
+    highlighted: Boolean = false,
     onClick: () -> Unit,
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Surface(
             modifier = Modifier
-                .size(54.dp)
+                .size(46.dp)
                 .clip(CircleShape)
                 .clickable(onClick = onClick),
-            color = Color(0xFF141C30),
-            border = BorderStroke(1.dp, Color(0x22FFFFFF)),
+            color = if (highlighted) Color(0xFF2563EB) else Color(0xFF141C30),
+            border = BorderStroke(1.dp, if (highlighted) Color(0xFF60A5FA) else Color(0x22FFFFFF)),
             shape = CircleShape,
         ) {
             Box(contentAlignment = Alignment.Center) {
-                Icon(icon, contentDescription = label, tint = Color.White, modifier = Modifier.size(22.dp))
+                if (customIcon != null) {
+                    customIcon()
+                } else if (icon != null) {
+                    Icon(icon, contentDescription = label, tint = Color.White, modifier = Modifier.size(20.dp))
+                }
             }
         }
         Spacer(Modifier.height(4.dp))
-        Text(label, fontSize = 11.sp, color = Color(0xFF94A3B8))
+        Text(
+            label,
+            fontSize = 10.sp,
+            maxLines = 1,
+            color = if (highlighted) Color(0xFF93C5FD) else Color(0xFF94A3B8)
+        )
+    }
+}
+
+@Composable
+private fun MouseIcon(tint: Color = Color.White, modifier: Modifier = Modifier.size(20.dp)) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val r = CornerRadius(w * 0.45f, w * 0.45f)
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(w * 0.15f, h * 0.05f),
+            size = Size(w * 0.7f, h * 0.9f),
+            cornerRadius = r,
+            style = Stroke(width = 2.dp.toPx())
+        )
+        drawLine(
+            color = tint,
+            start = Offset(w * 0.5f, h * 0.2f),
+            end = Offset(w * 0.5f, h * 0.42f),
+            strokeWidth = 2.5.dp.toPx(),
+            cap = StrokeCap.Round
+        )
+    }
+}
+
+@Composable
+private fun MouseTouchpadAndKeyboardSection(
+    mouseChannel: Channel<Pair<Float, Float>>,
+    onLeftClick: () -> Unit,
+    onRightClick: () -> Unit,
+    onExitMouseMode: () -> Unit,
+    isTvSearchActive: Boolean,
+    onSendSearch: (String) -> Unit,
+) {
+    var searchQuery by remember { mutableStateOf("") }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusRequester = remember { FocusRequester() }
+
+    // When TV opens the search screen (e.g. mouse clicked TV search button), automatically focus and pop up phone keyboard
+    LaunchedEffect(isTvSearchActive) {
+        if (isTvSearchActive) {
+            delay(150)
+            runCatching {
+                focusRequester.requestFocus()
+                keyboardController?.show()
+            }
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        // Mode Header & Switch Back Button
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF38BDF8))
+                )
+                Text(
+                    stringResource(R.string.remote_mouse_title),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = Color(0xFF38BDF8),
+                    letterSpacing = 0.5.sp,
+                )
+            }
+
+            Surface(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable(onClick = onExitMouseMode),
+                color = Color(0x333B82F6),
+                border = BorderStroke(1.dp, Color(0x663B82F6)),
+                shape = RoundedCornerShape(10.dp),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text("🎮", fontSize = 12.sp)
+                    Text(stringResource(R.string.remote_mouse_return_remote), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                }
+            }
+        }
+
+        // Low-Latency Touchpad Surface
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(210.dp)
+                .pointerInput(Unit) {
+                    detectDragGestures { change, dragAmount ->
+                        change.consume()
+                        // 2.2f sensitivity for ergonomic thumb glide across TV resolution
+                        val speed = 2.2f
+                        mouseChannel.trySend(Pair(dragAmount.x * speed, dragAmount.y * speed))
+                    }
+                }
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onTap = {
+                            onLeftClick()
+                        }
+                    )
+                },
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+            shape = RoundedCornerShape(20.dp),
+            border = BorderStroke(1.5.dp, Brush.linearGradient(listOf(Color(0xFF38BDF8), Color(0xFF1D4ED8)))),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.radialGradient(
+                            listOf(Color(0xFF1E293B), Color(0xFF0B1120))
+                        )
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                // Subtle central watermark & guidance
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    MouseIcon(
+                        tint = Color(0x4438BDF8),
+                        modifier = Modifier.size(32.dp),
+                    )
+                    Text(
+                        stringResource(R.string.remote_mouse_guide_drag),
+                        fontSize = 12.sp,
+                        color = Color(0xFF64748B),
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        stringResource(R.string.remote_mouse_guide_tap),
+                        fontSize = 10.5.sp,
+                        color = Color(0xFF475569),
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        // Left Click (Select) and Right Click (Back) Buttons
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            // Left Click (Primary Select)
+            Surface(
+                modifier = Modifier
+                    .weight(1.2f)
+                    .height(48.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .clickable(onClick = onLeftClick),
+                color = Color(0xFF2563EB),
+                border = BorderStroke(1.dp, Color(0xFF60A5FA)),
+                shape = RoundedCornerShape(14.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.remote_mouse_left_click), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                }
+            }
+
+            // Right Click (Back / Cancel)
+            Surface(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(48.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .clickable(onClick = onRightClick),
+                color = Color(0xFF1E293B),
+                border = BorderStroke(1.dp, Color(0x33FFFFFF)),
+                shape = RoundedCornerShape(14.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = Color(0xFF94A3B8), modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.remote_mouse_right_click), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFFCBD5E1))
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // Fast TV Search & Soft Keyboard Section (Beliren Klavye ve Hızlı Arama Alanı)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = if (isTvSearchActive) Color(0xFF0F2338) else Color(0xFF111827)
+            ),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(
+                if (isTvSearchActive) 1.5.dp else 1.dp,
+                if (isTvSearchActive) Color(0xFF38BDF8) else Color(0x22FFFFFF)
+            ),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+            ) {
+                // Search status bar
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.Search,
+                            contentDescription = null,
+                            tint = if (isTvSearchActive) Color(0xFF38BDF8) else Color(0xFF94A3B8),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            if (isTvSearchActive) stringResource(R.string.remote_mouse_search_active) else stringResource(R.string.remote_mouse_search_title),
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isTvSearchActive) Color(0xFF38BDF8) else Color(0xFF94A3B8),
+                        )
+                    }
+
+                    if (isTvSearchActive) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color(0x330284C7),
+                        ) {
+                            Text(
+                                stringResource(R.string.remote_mouse_search_live_badge),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color(0xFF38BDF8),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                // Text Field with FocusRequester
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(focusRequester),
+                    placeholder = {
+                        Text(
+                            stringResource(R.string.remote_mouse_keyboard_hint),
+                            fontSize = 12.sp,
+                            color = Color(0xFF64748B)
+                        )
+                    },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(
+                        onSearch = {
+                            if (searchQuery.isNotBlank()) {
+                                onSendSearch(searchQuery)
+                                keyboardController?.hide()
+                            }
+                        }
+                    ),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color(0xFF38BDF8),
+                        unfocusedBorderColor = Color(0x33FFFFFF),
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        cursorColor = Color(0xFF38BDF8),
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.kbd_clear), tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+                )
+
+                Spacer(Modifier.height(8.dp))
+
+                // Quick Send Button
+                Button(
+                    onClick = {
+                        if (searchQuery.isNotBlank()) {
+                            onSendSearch(searchQuery)
+                            keyboardController?.hide()
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(42.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                    shape = RoundedCornerShape(12.dp),
+                    enabled = searchQuery.isNotBlank(),
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.remote_mouse_search_send), fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                }
+            }
+        }
     }
 }
 
@@ -1014,7 +1672,7 @@ fun CameraScannerDialog(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text("TV'deki QR Kodu Hizalayın", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text(stringResource(R.string.remote_align_qr_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
                         IconButton(
                             onClick = onDismiss,
                             modifier = Modifier
@@ -1022,7 +1680,7 @@ fun CameraScannerDialog(
                                 .clip(CircleShape)
                                 .background(Color(0x66000000)),
                         ) {
-                            Icon(Icons.Default.Close, contentDescription = "Kapat", tint = Color.White)
+                            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.common_done), tint = Color.White)
                         }
                     }
 
@@ -1032,7 +1690,7 @@ fun CameraScannerDialog(
                         border = BorderStroke(1.dp, Color(0x44FFFFFF)),
                     ) {
                         Text(
-                            "Televizyondaki QR kodunu karenin içine getirin",
+                            stringResource(R.string.remote_align_qr_desc),
                             color = Color(0xFFE2E8F0),
                             fontSize = 13.sp,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -1047,19 +1705,19 @@ fun CameraScannerDialog(
                 ) {
                     Icon(Icons.Default.CameraAlt, contentDescription = null, tint = Color(0xFF60A5FA), modifier = Modifier.size(56.dp))
                     Spacer(Modifier.height(16.dp))
-                    Text("Kamera İzni Gerekiyor", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text(stringResource(R.string.remote_camera_permission_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
                     Spacer(Modifier.height(8.dp))
-                    Text("TV kumandasıyla eşleşmek için kameranın QR kodu okumasına izin vermelisiniz.", color = Color(0xFF94A3B8), textAlign = TextAlign.Center, fontSize = 13.sp)
+                    Text(stringResource(R.string.remote_camera_permission_desc), color = Color(0xFF94A3B8), textAlign = TextAlign.Center, fontSize = 13.sp)
                     Spacer(Modifier.height(24.dp))
                     Button(
                         onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
                     ) {
-                        Text("İzin Ver", fontWeight = FontWeight.Bold, color = Color.White)
+                        Text(stringResource(R.string.remote_camera_permission_allow), fontWeight = FontWeight.Bold, color = Color.White)
                     }
                     Spacer(Modifier.height(12.dp))
                     Button(onClick = onDismiss, colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent)) {
-                        Text("Vazgeç", color = Color(0xFF94A3B8))
+                        Text(stringResource(R.string.common_cancel), color = Color(0xFF94A3B8))
                     }
                 }
             }

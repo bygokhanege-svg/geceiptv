@@ -19,7 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Backspace
+import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -52,37 +52,73 @@ internal fun OnScreenKeyboard(
     onBackspace: () -> Unit,
     onClear: () -> Unit,
 ) {
-    val keyRows = listOf("1234567890", "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM")
+    var isUppercase by remember { mutableStateOf(false) }
     val firstKey = remember { FocusRequester() }
     val context = LocalContext.current
 
+    val row0 = "1234567890"
+    val row1 = if (isUppercase) "QWERTYUIOP" else "qwertyuiop"
+    val row2 = if (isUppercase) "ASDFGHJKL" else "asdfghjkl"
+    val row3 = if (isUppercase) "ZXCVBNM" else "zxcvbnm"
+
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        keyRows.forEachIndexed { rowIndex, line ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                line.forEachIndexed { colIndex, ch ->
-                    KeyCap(
-                        label = ch.toString(),
-                        focusRequester = if (rowIndex == 0 && colIndex == 0) firstKey else null,
-                        onClick = { onKey(ch.toString()) },
-                    )
-                }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            row0.forEachIndexed { colIndex, ch ->
+                KeyCap(
+                    label = ch.toString(),
+                    focusRequester = if (colIndex == 0) firstKey else null,
+                    onClick = { onKey(ch.toString()) },
+                )
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            KeyCap(label = stringResource(R.string.kbd_space), wide = 3, onClick = onSpace)
-            // Paste the clipboard through the same onKey callback the letter keys use, so it lands
-            // in whatever field this keyboard is driving. Empty clipboard just says so, no crash.
+            row1.forEach { ch ->
+                KeyCap(
+                    label = ch.toString(),
+                    onClick = { onKey(ch.toString()) },
+                )
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            row2.forEach { ch ->
+                KeyCap(
+                    label = ch.toString(),
+                    onClick = { onKey(ch.toString()) },
+                )
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            KeyCap(
+                label = stringResource(R.string.kbd_caps),
+                wide = 1.5f,
+                isActive = isUppercase,
+                onClick = { isUppercase = !isUppercase },
+            )
+            row3.forEach { ch ->
+                KeyCap(
+                    label = ch.toString(),
+                    onClick = { onKey(ch.toString()) },
+                )
+            }
+            KeyCap(
+                label = stringResource(R.string.kbd_del),
+                icon = true,
+                wide = 1.5f,
+                onClick = onBackspace,
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            KeyCap(label = stringResource(R.string.kbd_space), wide = 5f, onClick = onSpace)
             KeyCap(
                 label = stringResource(R.string.kbd_paste),
-                wide = 2,
+                wide = 2.5f,
                 onClick = {
                     val pasted = readClipboardText(context)
                     if (pasted != null) onKey(pasted)
                     else Toast.makeText(context, context.getString(R.string.kbd_clipboard_empty), Toast.LENGTH_SHORT).show()
                 },
             )
-            KeyCap(label = stringResource(R.string.kbd_del), icon = true, wide = 2, onClick = onBackspace)
-            KeyCap(label = stringResource(R.string.kbd_clear), wide = 2, onClick = onClear)
+            KeyCap(label = stringResource(R.string.kbd_clear), wide = 2.5f, onClick = onClear)
         }
     }
 
@@ -93,30 +129,42 @@ internal fun OnScreenKeyboard(
 private fun KeyCap(
     label: String,
     onClick: () -> Unit,
-    wide: Int = 1,
+    wide: Float = 1f,
+    isActive: Boolean = false,
     icon: Boolean = false,
     focusRequester: FocusRequester? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val bg = if (focused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
-    val fg = if (focused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+    val baseBg = when {
+        focused -> MaterialTheme.colorScheme.primary
+        isActive -> MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
+    val fg = when {
+        focused -> MaterialTheme.colorScheme.onPrimary
+        isActive -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    val widthDp = (48f * wide + (wide - 1f) * 8f).dp
+
     Box(
         Modifier
             .height(48.dp)
-            .width((48 * wide + (wide - 1) * 8).dp)
+            .width(widthDp)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .onFocusChanged { focused = it.isFocused }
             .clip(RoundedCornerShape(8.dp))
-            .background(bg)
+            .background(baseBg)
             .then(
                 if (focused) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
+                else if (isActive) Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
                 else Modifier,
             )
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         if (icon) {
-            Icon(Icons.Filled.Backspace, contentDescription = label, tint = fg)
+            Icon(Icons.AutoMirrored.Filled.Backspace, contentDescription = label, tint = fg)
         } else {
             Text(label, style = MaterialTheme.typography.titleMedium, color = fg, fontWeight = FontWeight.SemiBold)
         }
