@@ -23,15 +23,37 @@ class SourceRepository(
 
     suspend fun enabled(): List<Source> = dao.enabled()
 
+    suspend fun all(): List<Source> = dao.all()
+
     suspend fun byId(id: Long): Source? = dao.byId(id)
+
+    suspend fun findMatchingSource(source: Source): Source? = withContext(Dispatchers.IO) {
+        val allSources = dao.all()
+        allSources.firstOrNull { existing ->
+            (source.id == 0L || existing.id != source.id) && isSameSource(existing, source)
+        }
+    }
 
     suspend fun save(source: Source): Long = withContext(Dispatchers.IO) {
         val normalised = source.copy(url = normaliseUrl(source.url, source.kind))
-        if (source.id == 0L) dao.insert(normalised)
-        else {
+        if (source.id != 0L) {
             dao.update(normalised)
-            source.id
+            return@withContext source.id
         }
+
+        // Check if an identical provider already exists to prevent duplicate rows & catalog explosion
+        val existing = findMatchingSource(normalised)
+        if (existing != null) {
+            val updated = normalised.copy(
+                id = existing.id,
+                name = if (normalised.name.isNotBlank()) normalised.name else existing.name,
+                enabled = true,
+            )
+            dao.update(updated)
+            return@withContext existing.id
+        }
+
+        dao.insert(normalised)
     }
 
     /** Checks the details work before the user is committed to them. */
@@ -88,6 +110,52 @@ class SourceRepository(
                 .substringBefore("/get.php")
                 .substringBefore("/xmltv.php")
             return url.trimEnd('/')
+        }
+
+        /**
+         * Compares two sources to identify whether they point to the exact same provider account.
+         * Used to prevent duplicate insertions when syncing from phone or re-adding playlists.
+         */
+        fun isSameSource(a: Source, b: Source): Boolean {
+            if (a.kind != b.kind) return false
+            val aUrl = cleanUrlForCompare(normaliseUrl(a.url, a.kind))
+            val bUrl = cleanUrlForCompare(normaliseUrl(b.url, b.kind))
+            if (!aUrl.equals(bUrl, ignoreCase = true)) return false
+
+            return when (a.kind) {
+                SourceKind.XTREAM -> {
+                    val uA = a.username?.trim().orEmpty()
+                    val uB = b.username?.trim().orEmpty()
+                    if (uA.isNotEmpty() && uB.isNotEmpty()) {
+                        uA.equals(uB, ignoreCase = true)
+                    } else {
+                        true
+                    }
+                }
+                SourceKind.STALKER -> {
+                    val mA = cleanMac(a.macAddress)
+                    val mB = cleanMac(b.macAddress)
+                    if (mA.isNotEmpty() && mB.isNotEmpty()) {
+                        mA.equals(mB, ignoreCase = true)
+                    } else {
+                        true
+                    }
+                }
+                SourceKind.M3U -> true
+            }
+        }
+
+        private fun cleanUrlForCompare(url: String): String {
+            return url.trim()
+                .removePrefix("http://")
+                .removePrefix("https://")
+                .removePrefix("HTTP://")
+                .removePrefix("HTTPS://")
+                .trimEnd('/')
+        }
+
+        private fun cleanMac(mac: String?): String {
+            return mac?.replace(":", "")?.replace("-", "")?.trim().orEmpty()
         }
     }
 }

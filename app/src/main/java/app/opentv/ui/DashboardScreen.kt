@@ -45,6 +45,11 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -84,6 +89,7 @@ fun DashboardScreen(
     val settings = remember { AppSettings.get(context) }
     val activeSourceId by settings.activeSourceId.collectAsState()
     val sourcesUi by sourcesViewModel.ui.collectAsState()
+    val activeHealth by sourcesViewModel.activeProviderHealth.collectAsState()
     var providerMenuExpanded by remember { mutableStateOf(false) }
 
     val themeMode by settings.themeMode.collectAsState()
@@ -159,6 +165,7 @@ fun DashboardScreen(
             activeSourceId = activeSourceId,
             onSelectSource = { settings.setActiveSourceId(it.id) },
             onNavigateTab = onNavigateTab,
+            health = activeHealth,
         )
         return
     }
@@ -382,6 +389,7 @@ fun DashboardScreen(
                 onAddSource = onAddSource,
                 expanded = providerMenuExpanded,
                 onToggleExpand = { providerMenuExpanded = !providerMenuExpanded },
+                health = activeHealth,
             )
 
             Spacer(modifier = Modifier.height(10.dp))
@@ -443,6 +451,64 @@ fun DashboardScreen(
                         isMovie = true,
                         onItemClick = { onOpenMovie(it as Movie) },
                     )
+                }
+            }
+        }
+
+        // Sağ Alt Köşe: Sağlayıcı Bağlantı / Hata Bildirim Paneli
+        AnimatedVisibility(
+            visible = activeHealth?.isConnected == false,
+            enter = fadeIn() + slideInVertically { it / 2 },
+            exit = fadeOut() + slideOutVertically { it / 2 },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 24.dp, bottom = 24.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .widthIn(max = 420.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFF1E0A0A).copy(alpha = 0.96f))
+                    .border(1.5.dp, Color(0xFFEF4444), RoundedCornerShape(12.dp))
+                    .padding(14.dp),
+            ) {
+                Row(verticalAlignment = Alignment.Top) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFEF4444).copy(alpha = 0.2f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("⚠️", fontSize = 18.sp)
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Sağlayıcı Bağlantı Uyarısı",
+                            color = Color(0xFFFCA5A5),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.5.sp,
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Lütfen sağlayıcı değiştiriniz. Sağlayıcı bağlantınız yok yada kullanıcı adı şifre yanlış.",
+                            color = Color.White,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontSize = 11.5.sp,
+                            lineHeight = 16.sp,
+                        )
+                        if (!activeHealth?.errorMessage.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Hata Detayı: ${activeHealth?.errorMessage}",
+                                color = Color(0xFFF87171),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 10.sp,
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -979,6 +1045,7 @@ private fun PhoneDashboardContent(
     activeSourceId: Long,
     onSelectSource: (Source) -> Unit,
     onNavigateTab: ((Tab) -> Unit)?,
+    health: SourcesViewModel.ProviderHealth? = null,
 ) {
     val scrollState = rememberScrollState()
     var phoneProviderMenuExpanded by remember { mutableStateOf(false) }
@@ -1110,6 +1177,7 @@ private fun PhoneDashboardContent(
                 onAddSource = onAddSource,
                 expanded = phoneProviderMenuExpanded,
                 onToggleExpand = { phoneProviderMenuExpanded = !phoneProviderMenuExpanded },
+                health = health,
             )
 
             Spacer(modifier = Modifier.height(14.dp))
@@ -1469,6 +1537,55 @@ private fun PhoneDashboardContent(
 
             Spacer(modifier = Modifier.height(24.dp))
         }
+
+        // Sağ Alt Köşe / Mobil Bildirim Paneli
+        AnimatedVisibility(
+            visible = health?.isConnected == false,
+            enter = fadeIn() + slideInVertically { it / 2 },
+            exit = fadeOut() + slideOutVertically { it / 2 },
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(16.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFF1E0A0A).copy(alpha = 0.96f))
+                    .border(1.5.dp, Color(0xFFEF4444), RoundedCornerShape(12.dp))
+                    .padding(12.dp),
+            ) {
+                Row(verticalAlignment = Alignment.Top) {
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFEF4444).copy(alpha = 0.2f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("⚠️", fontSize = 16.sp)
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Sağlayıcı Bağlantı Uyarısı",
+                            color = Color(0xFFFCA5A5),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.5.sp,
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Lütfen sağlayıcı değiştiriniz. Sağlayıcı bağlantınız yok yada kullanıcı adı şifre yanlış.",
+                            color = Color.White,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp,
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1732,6 +1849,7 @@ private fun ProviderAccordionBar(
     onAddSource: () -> Unit,
     expanded: Boolean,
     onToggleExpand: () -> Unit,
+    health: SourcesViewModel.ProviderHealth? = null,
 ) {
     val activeSource = remember(sources, activeSourceId) {
         sources.find { it.id == activeSourceId } ?: sources.firstOrNull()
@@ -1740,14 +1858,26 @@ private fun ProviderAccordionBar(
     val headerInteraction = remember { MutableInteractionSource() }
     val isHeaderFocused by headerInteraction.collectIsFocusedAsState()
 
+    val isDisconnected = health != null && !health.isConnected
+
+    val borderColor = if (isDisconnected) {
+        Color(0xFFEF4444)
+    } else if (isHeaderFocused) {
+        Color(0xFF38BDF8)
+    } else {
+        Color(0xFF38BDF8).copy(alpha = 0.25f)
+    }
+
+    val barBg = if (isDisconnected) Color(0xFF1E1010) else Color(0xFF0D1527)
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
-            .background(Color(0xFF0D1527))
+            .background(barBg)
             .border(
-                if (isHeaderFocused) 1.5.dp else 1.dp,
-                if (isHeaderFocused) Color(0xFF38BDF8) else Color(0xFF38BDF8).copy(alpha = 0.25f),
+                if (isHeaderFocused || isDisconnected) 1.5.dp else 1.dp,
+                borderColor,
                 RoundedCornerShape(10.dp),
             )
     ) {
@@ -1767,11 +1897,11 @@ private fun ProviderAccordionBar(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("🌐", fontSize = 16.sp)
+                Text(if (isDisconnected) "⚠️" else "🌐", fontSize = 16.sp)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     "AKTİF SAĞLAYICI:",
-                    color = Color(0xFF94A3B8),
+                    color = if (isDisconnected) Color(0xFFFCA5A5) else Color(0xFF94A3B8),
                     style = MaterialTheme.typography.labelSmall,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
@@ -1789,16 +1919,48 @@ private fun ProviderAccordionBar(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(4.dp))
-                            .background(Color(0xFF0284C7).copy(alpha = 0.25f))
+                            .background(
+                                if (isDisconnected) Color(0xFFDC2626).copy(alpha = 0.25f)
+                                else Color(0xFF0284C7).copy(alpha = 0.25f)
+                            )
                             .padding(horizontal = 6.dp, vertical = 2.dp),
                     ) {
                         Text(
-                            activeSource.kind.name,
-                            color = Color(0xFF38BDF8),
+                            text = if (isDisconnected) "BAĞLANTI YOK" else activeSource.kind.name,
+                            color = if (isDisconnected) Color(0xFFEF4444) else Color(0xFF38BDF8),
                             style = MaterialTheme.typography.labelSmall,
                             fontSize = 8.5.sp,
                             fontWeight = FontWeight.Bold,
                         )
+                    }
+
+                    // Hız Sonucu Rozeti (Saatlik test sonucu)
+                    if (health != null) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(
+                                    if (isDisconnected) Color(0xFFEF4444).copy(alpha = 0.18f)
+                                    else Color(0xFF10B981).copy(alpha = 0.2f)
+                                )
+                                .border(
+                                    1.dp,
+                                    if (isDisconnected) Color(0xFFEF4444).copy(alpha = 0.4f)
+                                    else Color(0xFF10B981).copy(alpha = 0.4f),
+                                    RoundedCornerShape(4.dp)
+                                )
+                                .padding(horizontal = 7.dp, vertical = 2.dp),
+                        ) {
+                            Text(
+                                text = if (isDisconnected) "⚠️ Bağlantı Koptu"
+                                else "⚡ ${health.speedMbps} Mbps • ${health.pingMs}ms",
+                                color = if (isDisconnected) Color(0xFFFCA5A5) else Color(0xFF34D399),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
                     }
                 }
                 Spacer(modifier = Modifier.width(8.dp))
@@ -1814,7 +1976,13 @@ private fun ProviderAccordionBar(
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
-                        .background(if (isHeaderFocused) Color(0xFF0284C7) else Color(0xFF1E293B))
+                        .background(
+                            if (isHeaderFocused) {
+                                if (isDisconnected) Color(0xFFDC2626) else Color(0xFF0284C7)
+                            } else {
+                                if (isDisconnected) Color(0xFF3F1515) else Color(0xFF1E293B)
+                            }
+                        )
                         .padding(horizontal = 8.dp, vertical = 4.dp),
                 ) {
                     Text(

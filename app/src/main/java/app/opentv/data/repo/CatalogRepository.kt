@@ -1020,6 +1020,26 @@ class CatalogRepository(
         }
     }
 
+    /**
+     * Checks all configured sources and prunes any duplicates that may have been created previously,
+     * removing redundant channel/category records from the database.
+     */
+    suspend fun cleanupDuplicateSources(): Int = withContext(Dispatchers.IO) {
+        val all = sourceDao.all()
+        val kept = mutableListOf<Source>()
+        var removed = 0
+        for (src in all) {
+            val duplicate = kept.firstOrNull { SourceRepository.isSameSource(it, src) }
+            if (duplicate != null) {
+                deleteSource(src.id)
+                removed++
+            } else {
+                kept.add(src)
+            }
+        }
+        removed
+    }
+
     companion object {
         private const val TAG = "CatalogRepository"
         val SEPARATOR_CHARS = setOf('#', '*', '=', '~', '-', '_', '•', '█', '▓', '|')

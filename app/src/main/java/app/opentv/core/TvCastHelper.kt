@@ -124,7 +124,8 @@ object TvCastHelper {
                 }
                 val endpoint = if (tvUrl.endsWith("/")) "${tvUrl}source?t=$tvToken" else "$tvUrl/source?t=$tvToken"
                 val httpClient = ServiceLocator.get(context).httpClient
-                var successCount = 0
+                var newAddedCount = 0
+                var alreadyExistedCount = 0
                 for (source in localSources) {
                     val jsonBody = buildString {
                         append("{\"kind\":\"").append(source.kind.name.lowercase()).append("\"")
@@ -141,13 +142,30 @@ object TvCastHelper {
                         .build()
                     runCatching {
                         httpClient.newCall(req).execute().use { res ->
-                            if (res.isSuccessful) successCount++
+                            if (res.isSuccessful) {
+                                val bodyStr = res.body?.string().orEmpty()
+                                if (bodyStr.contains("\"alreadyExisted\":true")) {
+                                    alreadyExistedCount++
+                                } else {
+                                    newAddedCount++
+                                }
+                            }
                         }
                     }
                 }
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "✓ $successCount sağlayıcı TV'ye başarıyla aktarıldı!", Toast.LENGTH_LONG).show()
-                    onComplete?.invoke(true, successCount)
+                    val msg = when {
+                        newAddedCount > 0 && alreadyExistedCount > 0 ->
+                            "✓ $newAddedCount yeni sağlayıcı eklendi, $alreadyExistedCount tanesi zaten TV'de mevcuttu."
+                        newAddedCount > 0 ->
+                            "✓ $newAddedCount sağlayıcı TV'ye başarıyla aktarıldı!"
+                        alreadyExistedCount > 0 ->
+                            "✓ Tüm sağlayıcılar ($alreadyExistedCount adet) TV'de zaten mevcut. Mükerrer yükleme engellendi."
+                        else ->
+                            "Sağlayıcı aktarılamadı veya TV yanıt vermedi."
+                    }
+                    Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                    onComplete?.invoke(newAddedCount > 0 || alreadyExistedCount > 0, newAddedCount + alreadyExistedCount)
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {

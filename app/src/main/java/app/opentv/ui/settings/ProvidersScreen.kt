@@ -71,7 +71,6 @@ fun ProvidersScreen(
 ) {
     val ui by viewModel.ui.collectAsState()
     val speedTestState by viewModel.speedTest.collectAsState()
-    var pendingRemove by remember { mutableStateOf<Source?>(null) }
 
     val isPhone = LocalConfiguration.current.screenWidthDp < 600
 
@@ -113,14 +112,8 @@ fun ProvidersScreen(
             items(ui.sources, key = { it.id }) { source ->
                 ProviderRow(
                     source = source,
-                    confirming = pendingRemove?.id == source.id,
                     onEdit = { onEditSource(source) },
-                    onAskRemove = { pendingRemove = source },
-                    onCancelRemove = { pendingRemove = null },
-                    onConfirmRemove = {
-                        viewModel.delete(source)
-                        pendingRemove = null
-                    },
+                    onRemove = { viewModel.delete(source) },
                     onSetLiveFormat = { viewModel.setLiveFormat(source, it) },
                     onRunSpeedTest = { viewModel.runSpeedTest(source) },
                 )
@@ -212,11 +205,8 @@ fun ProvidersScreen(
 @Composable
 private fun ProviderRow(
     source: Source,
-    confirming: Boolean,
     onEdit: () -> Unit,
-    onAskRemove: () -> Unit,
-    onCancelRemove: () -> Unit,
-    onConfirmRemove: () -> Unit,
+    onRemove: () -> Unit,
     onSetLiveFormat: (LiveStreamFormat) -> Unit,
     onRunSpeedTest: () -> Unit,
 ) {
@@ -259,29 +249,19 @@ private fun ProviderRow(
 
                 Spacer(Modifier.height(10.dp))
 
-                if (confirming) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Text(
-                            stringResource(R.string.providers_remove_confirm),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                        TextButton(onClick = onConfirmRemove) { Text(stringResource(R.string.providers_yes_remove)) }
-                        TextButton(onClick = onCancelRemove) { Text(stringResource(R.string.common_cancel)) }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FilledTonalButton(onClick = onRunSpeedTest) {
+                        Text("⚡ Hız Testi")
                     }
-                } else {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    TextButton(onClick = onEdit) { Text(stringResource(R.string.common_edit)) }
+                    TextButton(
+                        onClick = onRemove,
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
                     ) {
-                        FilledTonalButton(onClick = onRunSpeedTest) {
-                            Text("⚡ Hız Testi")
-                        }
-                        TextButton(onClick = onEdit) { Text(stringResource(R.string.common_edit)) }
-                        TextButton(onClick = onAskRemove) { Text(stringResource(R.string.common_remove)) }
+                        Text(stringResource(R.string.common_remove))
                     }
                 }
             } else {
@@ -313,22 +293,17 @@ private fun ProviderRow(
                         )
                     }
 
-                    if (confirming) {
-                        Text(
-                            stringResource(R.string.providers_remove_confirm),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        TextButton(onClick = onConfirmRemove) { Text(stringResource(R.string.providers_yes_remove)) }
-                        TextButton(onClick = onCancelRemove) { Text(stringResource(R.string.common_cancel)) }
-                    } else {
-                        FilledTonalButton(onClick = onRunSpeedTest) {
-                            Text("⚡ Hız Testi")
-                        }
-                        Spacer(Modifier.width(6.dp))
-                        TextButton(onClick = onEdit) { Text(stringResource(R.string.common_edit)) }
-                        TextButton(onClick = onAskRemove) { Text(stringResource(R.string.common_remove)) }
+                    FilledTonalButton(onClick = onRunSpeedTest) {
+                        Text("⚡ Hız Testi")
+                    }
+                    Spacer(Modifier.width(6.dp))
+                    TextButton(onClick = onEdit) { Text(stringResource(R.string.common_edit)) }
+                    Spacer(Modifier.width(4.dp))
+                    TextButton(
+                        onClick = onRemove,
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    ) {
+                        Text(stringResource(R.string.common_remove))
                     }
                 }
             }

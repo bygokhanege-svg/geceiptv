@@ -108,6 +108,7 @@ class GeceIptvApp : Application(), ImageLoaderFactory {
             // itself on and download the first time — without waiting for the user to find
             // the refresh button. ensureFeeds + auto-enable-by-region + matcher all live here.
             graph.epgRepository.syncAll(System.currentTimeMillis(), force = false)
+            runCatching { graph.catalogRepository.cleanupDuplicateSources() }
         }
     }
 }

@@ -396,6 +396,17 @@ class ManagerServer(
             return
         }
         val result = runBlocking {
+            val existing = sourceRepository.findMatchingSource(draft)
+            if (existing != null) {
+                // TV already has this provider. Update credentials/name if changed, avoiding duplicate entries & re-downloading channels.
+                val updated = draft.copy(
+                    id = existing.id,
+                    name = if (draft.name.isNotBlank()) draft.name else existing.name,
+                    enabled = true,
+                )
+                sourceRepository.save(updated)
+                return@runBlocking AddResultDto(ok = true, channels = 0, alreadyExisted = true)
+            }
             val id = sourceRepository.save(draft)
             val saved = sourceRepository.byId(id)
                 ?: return@runBlocking AddResultDto(ok = false, error = "Could not save the source.")
@@ -611,7 +622,12 @@ class ManagerServer(
     val mac: String? = null,
 )
 
-@Serializable private data class AddResultDto(val ok: Boolean, val channels: Int = 0, val error: String? = null)
+@Serializable private data class AddResultDto(
+    val ok: Boolean,
+    val channels: Int = 0,
+    val error: String? = null,
+    val alreadyExisted: Boolean = false,
+)
 
 @Serializable private data class TestResultDto(val ok: Boolean, val message: String? = null, val error: String? = null)
 
