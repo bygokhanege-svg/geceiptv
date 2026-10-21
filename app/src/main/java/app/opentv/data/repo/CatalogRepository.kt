@@ -644,7 +644,11 @@ class CatalogRepository(
      * [syncLive] + background [syncVod] path instead, so the guide appears without waiting for a
      * 40,000-title VOD list.
      */
-    suspend fun sync(source: Source, nowUtcMillis: Long): SyncResult = withContext(Dispatchers.IO) {
+    suspend fun sync(
+        source: Source,
+        nowUtcMillis: Long,
+        forceVod: Boolean = false,
+    ): SyncResult = withContext(Dispatchers.IO) {
         // Skip fetching a content type the user has switched off — that's the whole speed-up.
         // Live is gated here (not in syncLive) so onboarding's direct syncLive still loads channels.
         // Already-synced rows are left untouched: turning a type back on and refreshing restores it.
@@ -652,7 +656,7 @@ class CatalogRepository(
             if (settings.liveEnabled.value) syncLive(source, nowUtcMillis)
             else SyncResult.Success(0, 0, 0)
         if (live is SyncResult.Success && source.kind == SourceKind.XTREAM) {
-            runCatching { syncXtreamVod(source, nowUtcMillis) }
+            runCatching { syncXtreamVod(source, nowUtcMillis, force = forceVod) }
                 .onFailure { Log.w(TAG, "VOD sync failed for source ${source.id}", it) }
         }
         live
@@ -676,8 +680,12 @@ class CatalogRepository(
 
     /** Movies + series — best-effort, meant to run in the background so a huge VOD list never
      * blocks live TV. Silent on failure: an account with no VOD is normal, not an error. */
-    suspend fun syncVod(source: Source, nowUtcMillis: Long) = withContext(Dispatchers.IO) {
-        runCatching { if (source.kind == SourceKind.XTREAM) syncXtreamVod(source, nowUtcMillis) }
+    suspend fun syncVod(
+        source: Source,
+        nowUtcMillis: Long,
+        force: Boolean = false,
+    ) = withContext(Dispatchers.IO) {
+        runCatching { if (source.kind == SourceKind.XTREAM) syncXtreamVod(source, nowUtcMillis, force = force) }
             .onFailure { Log.w(TAG, "VOD sync failed for source ${source.id}", it) }
     }
 
@@ -761,59 +769,87 @@ class CatalogRepository(
         channelDao.updateStreamUrl(channelId, newUrl)
     }
 
-    private suspend fun syncXtreamVod(source: Source, nowUtcMillis: Long) {
+    private suspend fun syncXtreamVod(
+        source: Source,
+        nowUtcMillis: Long,
+        force: Boolean = false,
+    ) {
         val moviesOn = settings.moviesEnabled.value
         val seriesOn = settings.seriesEnabled.value
         if (!moviesOn && !seriesOn) return
 
-        coroutineScope {
-            val movieCatsDeferred = async(Dispatchers.IO) {
-                if (moviesOn) runCatching { api.movieCategories(source) }.getOrDefault(emptyList()) else emptyList()
+        // Akıllı Önbellek Kalkanı:
+        // Eğer zorlamalı yenileme (force = true) yapılmıyorsa ve veritabanında zaten içerik varsa,
+        // son senkronizasyonun üzerinden 12 saat (VOD_TTL_MILLIS) geçmediyse ağ indirmesini ve StatusBus döngüsünü atla.
+        if (!force) {
+            val movieCount = movieDao.count(source.id)
+            val seriesCount = seriesDao.count(source.id)
+            val hasVod = (movieCount + seriesCount) > 0
+            val lastSynced = settings.getVodSyncedAtMillis(source.id)
+            val isFresh = lastSynced > 0L && (nowUtcMillis - lastSynced) < VOD_TTL_MILLIS
+            if (hasVod && isFresh) {
+                Log.i(
+                    TAG,
+                    "VOD for source ${source.id} (${source.name}) is fresh " +
+                        "($movieCount movies, $seriesCount series, ${(nowUtcMillis - lastSynced) / 60_000L}m ago). " +
+                        "Skipping network fetch to prevent UI loops and TV freezing.",
+                )
+                return
             }
-            val moviesDeferred = async(Dispatchers.IO) {
-                if (moviesOn) runCatching { api.movies(source) }.getOrDefault(emptyList()) else emptyList()
-            }
-            val seriesCatsDeferred = async(Dispatchers.IO) {
-                if (seriesOn) runCatching { api.seriesCategories(source) }.getOrDefault(emptyList()) else emptyList()
-            }
-            val seriesDeferred = async(Dispatchers.IO) {
-                if (seriesOn) runCatching { api.series(source) }.getOrDefault(emptyList()) else emptyList()
-            }
+        }
 
-            val movieCategories = movieCatsDeferred.await()
-            val seriesCategories = seriesCatsDeferred.await()
-            if (movieCategories.isNotEmpty() || seriesCategories.isNotEmpty()) {
-                categoryDao.upsertAll(movieCategories + seriesCategories)
-            }
-
-            val movies = moviesDeferred.await()
-            if (movies.isNotEmpty()) {
-                val total = movies.size
-                val chunks = movies.chunked(500)
-                var inserted = 0
-                for (chunk in chunks) {
-                    movieDao.upsertAll(chunk)
-                    inserted += chunk.size
-                    val pct = (inserted.toFloat() / total * 100).toInt().coerceIn(0, 100)
-                    StatusBus.set("Filmler yükleniyor: $inserted / $total (%$pct)", inserted.toFloat() / total)
-                    yield()
+        try {
+            coroutineScope {
+                val movieCatsDeferred = async(Dispatchers.IO) {
+                    if (moviesOn) runCatching { api.movieCategories(source) }.getOrDefault(emptyList()) else emptyList()
                 }
-            }
-
-            val series = seriesDeferred.await()
-            if (series.isNotEmpty()) {
-                val total = series.size
-                val chunks = series.chunked(500)
-                var inserted = 0
-                for (chunk in chunks) {
-                    seriesDao.upsertAll(chunk)
-                    inserted += chunk.size
-                    val pct = (inserted.toFloat() / total * 100).toInt().coerceIn(0, 100)
-                    StatusBus.set("Diziler yükleniyor: $inserted / $total (%$pct)", inserted.toFloat() / total)
-                    yield()
+                val moviesDeferred = async(Dispatchers.IO) {
+                    if (moviesOn) runCatching { api.movies(source) }.getOrDefault(emptyList()) else emptyList()
                 }
-            }
+                val seriesCatsDeferred = async(Dispatchers.IO) {
+                    if (seriesOn) runCatching { api.seriesCategories(source) }.getOrDefault(emptyList()) else emptyList()
+                }
+                val seriesDeferred = async(Dispatchers.IO) {
+                    if (seriesOn) runCatching { api.series(source) }.getOrDefault(emptyList()) else emptyList()
+                }
 
+                val movieCategories = movieCatsDeferred.await()
+                val seriesCategories = seriesCatsDeferred.await()
+                if (movieCategories.isNotEmpty() || seriesCategories.isNotEmpty()) {
+                    categoryDao.upsertAll(movieCategories + seriesCategories)
+                }
+
+                val movies = moviesDeferred.await()
+                if (movies.isNotEmpty()) {
+                    val total = movies.size
+                    val chunks = movies.chunked(500)
+                    var inserted = 0
+                    for (chunk in chunks) {
+                        movieDao.upsertAll(chunk)
+                        inserted += chunk.size
+                        val pct = (inserted.toFloat() / total * 100).toInt().coerceIn(0, 100)
+                        StatusBus.set("Filmler yükleniyor: $inserted / $total (%$pct)", inserted.toFloat() / total)
+                        yield()
+                    }
+                }
+
+                val series = seriesDeferred.await()
+                if (series.isNotEmpty()) {
+                    val total = series.size
+                    val chunks = series.chunked(500)
+                    var inserted = 0
+                    for (chunk in chunks) {
+                        seriesDao.upsertAll(chunk)
+                        inserted += chunk.size
+                        val pct = (inserted.toFloat() / total * 100).toInt().coerceIn(0, 100)
+                        StatusBus.set("Diziler yükleniyor: $inserted / $total (%$pct)", inserted.toFloat() / total)
+                        yield()
+                    }
+                }
+
+                settings.setVodSyncedAtMillis(source.id, nowUtcMillis)
+            }
+        } finally {
             StatusBus.set(null)
         }
     }
@@ -1050,5 +1086,6 @@ class CatalogRepository(
          * and runs [renormalizeAll] once when it moves.
          */
         const val NORMALIZER_VERSION = 3
+        const val VOD_TTL_MILLIS = 12L * 60 * 60 * 1000 // 12 hours
     }
 }

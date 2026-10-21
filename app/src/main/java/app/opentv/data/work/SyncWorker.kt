@@ -38,35 +38,39 @@ class SyncWorker(
         val sources = graph.sourceRepository.enabled()
         if (sources.isEmpty()) return Result.success()
 
-        var anyFailed = false
+        var allSourcesFailed = sources.isNotEmpty()
 
         for (source in sources) {
-            when (val result = graph.catalogRepository.sync(source, now)) {
-                is CatalogRepository.SyncResult.Success ->
+            when (val result = graph.catalogRepository.sync(source, now, forceVod = false)) {
+                is CatalogRepository.SyncResult.Success -> {
+                    allSourcesFailed = false
                     Log.i(TAG, "Catalogue for ${source.name}: ${result.channelCount} channels")
+                }
                 is CatalogRepository.SyncResult.Failed -> {
-                    anyFailed = true
                     Log.w(TAG, "Catalogue for ${source.name} failed: ${result.reason}")
                 }
             }
-
         }
 
         // Guides sync as one pass across every enabled feed — provider guides, built-in
         // free sources and user URLs merge into a single guide, then the matcher runs.
-        val summary = graph.epgRepository.syncAll(now)
-        if (summary.feedsFailed > 0) anyFailed = true
-        Log.i(
-            TAG,
-            "Guide: ${summary.programmesWritten} programmes from ${summary.feedsSucceeded} " +
-                "feed(s), ${summary.channelsMatched}/${summary.channelsTotal} channels matched",
-        )
+        // EPG sync is best-effort: external feeds often fail or 404, which must NOT cause
+        // an aggressive WorkManager retry loop on the TV.
+        val summary = runCatching { graph.epgRepository.syncAll(now) }.getOrNull()
+        if (summary != null) {
+            Log.i(
+                TAG,
+                "Guide: ${summary.programmesWritten} programmes from ${summary.feedsSucceeded} " +
+                    "feed(s), ${summary.channelsMatched}/${summary.channelsTotal} channels matched",
+            )
+        }
 
         // Book any newly-revealed series-link airings from this fresh guide.
         runCatching { graph.recordingEngine.rescanSeriesRules() }
 
-        // A partial failure is still a retry — but the user keeps everything already on disk.
-        return if (anyFailed) Result.retry() else Result.success()
+        // Only retry if EVERY enabled source failed completely (e.g. device is offline)
+        // AND we have tried fewer than 3 times. Otherwise, succeed and wait for the next 6-hour interval.
+        return if (allSourcesFailed && runAttemptCount < 3) Result.retry() else Result.success()
     }
 
     companion object {
@@ -104,14 +108,14 @@ class SyncWorker(
                 )
                 .setBackoffCriteria(
                     androidx.work.BackoffPolicy.EXPONENTIAL,
-                    15,
+                    30,
                     TimeUnit.MINUTES,
                 )
                 .build()
 
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 WORK_NAME,
-                ExistingPeriodicWorkPolicy.KEEP,
+                ExistingPeriodicWorkPolicy.UPDATE,
                 request,
             )
         }

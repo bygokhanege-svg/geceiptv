@@ -379,7 +379,7 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
             var channels = 0
             var problems = 0
             for (source in graph.sourceRepository.enabled()) {
-                when (val result = graph.catalogRepository.sync(source, now)) {
+                when (val result = graph.catalogRepository.sync(source, now, forceVod = true)) {
                     is CatalogRepository.SyncResult.Success -> channels += result.channelCount
                     is CatalogRepository.SyncResult.Failed -> problems++
                 }
@@ -1421,7 +1421,7 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
         _vodLoading.value = true
         val synced = runCatching {
             for (source in graph.sourceRepository.enabled()) {
-                graph.catalogRepository.syncVod(source, now)
+                graph.catalogRepository.syncVod(source, now, force = force)
             }
         }.isSuccess
         _vodLoading.value = false

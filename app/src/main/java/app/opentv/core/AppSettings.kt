@@ -598,6 +598,18 @@ class AppSettings private constructor(context: Context) {
         get() = prefs.getLong(KEY_VOD_SYNCED_AT, 0L)
         set(value) { prefs.edit().putLong(KEY_VOD_SYNCED_AT, value).apply() }
 
+    fun getVodSyncedAtMillis(sourceId: Long): Long {
+        val perSource = prefs.getLong("vod_synced_at_$sourceId", 0L)
+        return if (perSource > 0L) perSource else vodSyncedAtMillis
+    }
+
+    fun setVodSyncedAtMillis(sourceId: Long, millis: Long) {
+        prefs.edit()
+            .putLong("vod_synced_at_$sourceId", millis)
+            .putLong(KEY_VOD_SYNCED_AT, millis)
+            .apply()
+    }
+
     /**
      * The user's own TMDB API key (v3 auth), stored on-device only exactly like provider
      * credentials, used to fill in artwork/metadata a provider left blank. Blank = the TMDB
