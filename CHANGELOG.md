@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.11
+
+- **Çoklu Ekran (Multi-View) Çökme Onarımı:** Çoklu ekranda boş kutuya "+ Kanal Ekle"ye basıldığında veya kanal seçerken uygulamanın kapanmasına neden olan Jetpack Compose mükerrer anahtar (duplicate key) hatası giderildi.
+- **Aktif Sağlayıcı İzolasyonu (Çoklu Ekran):** Çoklu ekran kanal ve kategori seçici artık tüm sağlayıcıların on binlerce kanalını tek seferde çekmek yerine yalnızca seçili aktif sağlayıcının kanallarını listeler.
+- **Düşük RAM'li TV'ler İçin Koruma Kalkanı:** "Tüm Kanallar" görünümünde binlerce kanalın Compose listesine yığılmasını önlemek için ilk yükleme 200 kanalla sınırlandırıldı; kategori seçildiğinde akıcı ve hafif liste filtrelemesi sağlandı.
+- **Güvenli Akış Bağlantısı:** Kanal oynatıcı bağlantıları ve seçim eylemleri `runCatching` kalkanına alınarak oluşabilecek olası ağ/çözücü istisnalarına karşı tam koruma sağlandı.
+
 ## 0.12.04
 
 - **Telefon Arayüzü Film & Dizi Ekranı:** Sol dikey kategori rayı kaldırılarak üst yatay kaydırılabilir kategori çipleri, kategori arama butonu ve tam ekran 3 sütunlu modern afiş ızgarası getirildi.

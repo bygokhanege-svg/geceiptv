@@ -244,17 +244,33 @@ fun MultiViewScreen(
     val slotFocusRequesters = remember { List(4) { FocusRequester() } }
     val topBarFocusRequester = remember { FocusRequester() }
 
-    val liveCategories by graph.catalogRepository.observeCategories(StreamKind.LIVE).collectAsState(initial = emptyList())
-    val allChannels by graph.catalogRepository.observeChannels().collectAsState(initial = emptyList())
+    val activeSourceId by graph.settings.activeSourceId.collectAsState()
+    val effectiveSourceId = remember(activeSourceId) { if (activeSourceId > 0) activeSourceId else null }
+
+    val liveCategoriesRaw by graph.catalogRepository.observeCategories(StreamKind.LIVE).collectAsState(initial = emptyList())
+    val allChannels by graph.catalogRepository.observeChannels(sourceId = effectiveSourceId).collectAsState(initial = emptyList())
+
+    val liveCategories = remember(liveCategoriesRaw, effectiveSourceId) {
+        val filtered = if (effectiveSourceId != null) {
+            liveCategoriesRaw.filter { it.sourceId == effectiveSourceId }
+        } else {
+            liveCategoriesRaw
+        }
+        filtered.distinctBy { it.id }
+    }
 
     val onSelectChannelForSlot: (Int, Channel) -> Unit = { slotIdx, selected ->
-        slots[slotIdx] = selected
-        onSlotFocused(slotIdx)
-        tuneSlot(slotIdx, selected, controllers, graph, scope, isAudioActive = true)
-        channelPickerSlotIndex = null
-        scope.launch {
-            delay(60)
-            runCatching { slotFocusRequesters[slotIdx].requestFocus() }
+        runCatching {
+            slots[slotIdx] = selected
+            onSlotFocused(slotIdx)
+            tuneSlot(slotIdx, selected, controllers, graph, scope, isAudioActive = true)
+            channelPickerSlotIndex = null
+            scope.launch {
+                delay(80)
+                runCatching { slotFocusRequesters.getOrNull(slotIdx)?.requestFocus() }
+            }
+        }.onFailure { e ->
+            android.util.Log.e("MultiViewScreen", "Error selecting channel for slot $slotIdx", e)
         }
     }
 
@@ -262,7 +278,7 @@ fun MultiViewScreen(
         channelPickerSlotIndex = null
         scope.launch {
             delay(60)
-            runCatching { slotFocusRequesters[slotIdx].requestFocus() }
+            runCatching { slotFocusRequesters.getOrNull(slotIdx)?.requestFocus() }
         }
     }
 
@@ -318,7 +334,6 @@ fun MultiViewScreen(
                 window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 view.keepScreenOn = false
             }
-            controllers.forEach { it.release() }
         }
     }
 
@@ -725,23 +740,27 @@ private fun tuneSlot(
     isAudioActive: Boolean,
 ) {
     scope.launch {
-        val (source, url) = kotlinx.coroutines.withContext(Dispatchers.IO) {
-            val src = graph.sourceRepository.byId(channel.sourceId)
-            val playbackUrl = graph.catalogRepository.resolvePlaybackUrl(channel, src)
-            src to playbackUrl
+        runCatching {
+            val (source, url) = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                val src = graph.sourceRepository.byId(channel.sourceId)
+                val playbackUrl = graph.catalogRepository.resolvePlaybackUrl(channel, src)
+                src to playbackUrl
+            }
+            val ctrl = controllers.getOrNull(slotIndex) ?: return@launch
+            ctrl.player.volume = if (isAudioActive) 1f else 0f
+            ctrl.play(
+                PlayerController.Request(
+                    url = url,
+                    title = channel.shownName,
+                    userAgent = source?.userAgent ?: "GECEiptv/1.0 (Android)",
+                    isLive = true,
+                ),
+                debounce = false,
+            )
+            ctrl.player.volume = if (isAudioActive) 1f else 0f
+        }.onFailure { e ->
+            android.util.Log.e("MultiViewScreen", "Failed to tune slot $slotIndex for ${channel.name}", e)
         }
-        val ctrl = controllers.getOrNull(slotIndex) ?: return@launch
-        ctrl.player.volume = if (isAudioActive) 1f else 0f
-        ctrl.play(
-            PlayerController.Request(
-                url = url,
-                title = channel.shownName,
-                userAgent = source?.userAgent ?: "OpenTV/0.1 (Android)",
-                isLive = true,
-            ),
-            debounce = false,
-        )
-        ctrl.player.volume = if (isAudioActive) 1f else 0f
     }
 }
 
@@ -1265,10 +1284,16 @@ private fun InSlotChannelPicker(
     var selectedCategoryId by remember { mutableStateOf<String?>(null) }
 
     val filteredChannels = remember(allChannels, selectedCategoryId) {
-        if (selectedCategoryId == null) {
+        val list = if (selectedCategoryId == null) {
             allChannels
         } else {
             allChannels.filter { it.categoryId == selectedCategoryId }
+        }
+        // Memory guard for low-spec TV boxes: limit initial display to 200 items when "All" is active
+        if (selectedCategoryId == null && list.size > 200) {
+            list.take(200)
+        } else {
+            list
         }
     }
 
@@ -1374,14 +1399,17 @@ private fun InSlotChannelPicker(
                     .padding(vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                item {
+                item(key = "all_channels_chip") {
                     InSlotCategoryChip(
                         label = stringResource(R.string.guide_all_channels),
                         isSelected = selectedCategoryId == null,
                         onClick = { selectedCategoryId = null },
                     )
                 }
-                items(categories, key = { it.id }) { cat ->
+                itemsIndexed(
+                    items = categories,
+                    key = { index, cat -> "${cat.sourceId}_${cat.id}_$index" },
+                ) { _, cat ->
                     InSlotCategoryChip(
                         label = cat.name,
                         isSelected = selectedCategoryId == cat.id,
@@ -1415,7 +1443,10 @@ private fun InSlotChannelPicker(
                     .fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                itemsIndexed(filteredChannels, key = { _, ch -> ch.id }) { index, channel ->
+                itemsIndexed(
+                    items = filteredChannels,
+                    key = { index, ch -> "${ch.sourceId}_${ch.id}_$index" },
+                ) { index, channel ->
                     InSlotChannelRow(
                         channel = channel,
                         focusRequester = if (index == 0) firstChannelFocusRequester else null,

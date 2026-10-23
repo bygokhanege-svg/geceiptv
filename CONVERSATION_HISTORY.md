@@ -268,6 +268,19 @@
   * **Birim Testleri (`UpdateCheckerTest.kt`):** Sürüm karşılaştırma ve Türkçe karakter düzeltme testleri başarıyla doğrulandı.
   * **Sürüm Güncelleme & Release:** `app/build.gradle.kts` içinde `versionCode = 31`, `versionName = "0.12.10"` olarak güncellendi, `GECEiptv-release.apk` derlendi ve GitHub Release `v0.12.10` olarak yüklendi.
 
+### 20. Çoklu Ekran (Multi-View) Kanal Ekleme Çökmesinin Çözümü (Duplicate Key & Aktif Sağlayıcı İzolasyonu)
+* **Kullanıcı Bildirimi:**
+  * Çoklu ekran (Multi-View) seçeneğinde boş slota "+ Kanal Ekle" butonuna basıldığında veya kanal seçerken televizyondan/telefondan uygulamanın aniden kapanması/çökmesi.
+* **Kök Nedenler:**
+  1. **Jetpack Compose Mükerrer Anahtar (`IllegalArgumentException`):** `InSlotChannelPicker` içindeki `LazyRow` kategori çipleri `items(categories, key = { it.id })` kullanıyordu. `Category` entity'sinde `id` yalnızca `sourceId` ile birlikte benzersizdir (`["sourceId", "id", "kind"]`). Birden fazla sağlayıcı veya standart ID'li ("1", "2") kategoriler olduğunda Compose anında `IllegalArgumentException: Key was already used` fırlatarak uygulamayı kapatıyordu.
+  2. **Aktif Sağlayıcı İzolasyonu Eksikliği & Bellek Şişmesi:** `MultiViewScreen` içinde `observeChannels()` ve `observeCategories()` parametresiz çağrılarak tüm sağlayıcıların on binlerce kanalı filtrelenmeden tek seferde RAM'e yükleniyordu; TV'lerde bellek tükenmesi (OOM) ve ölçüm kilitlenmesi yaşanıyordu.
+  3. **Yakalanamayan İstisnalar (Unhandled Exceptions):** `tuneSlot` ve `onSelectChannelForSlot` çağrılarında coroutine scope içinde hata yakalama (`runCatching`) eksikti.
+* **Teknik Çözüm ve Kararlar (`MultiViewScreen.kt`):**
+  * **Benzersiz Anahtar Garantisi:** Kategori çipleri `itemsIndexed(categories, key = { index, cat -> "${cat.sourceId}_${cat.id}_$index" })` ve kanal satırları `itemsIndexed(filteredChannels, key = { index, ch -> "${ch.sourceId}_${ch.id}_$index" })` yapılarak Compose duplicate key çökmesi %100 engellendi.
+  * **Aktif Sağlayıcı İzolasyonu:** `settings.activeSourceId` dinlenerek sadece seçili sağlayıcının kanalları (`observeChannels(effectiveSourceId)`) ve kategorileri çekildi; mükerrer kategoriler `distinctBy { it.id }` ile temizlendi.
+  * **Düşük RAM Kalkanı:** "Tüm Kanallar" seçili iken binlerce kanalın Compose listesine yığılmasını engellemek için ilk yükleme `list.take(200)` ile sınırlandırıldı; spesifik kategori seçildiğinde ise o kategorinin kanalları gösterildi.
+  * **Güvenli Hata Yakalama:** `tuneSlot` ve `onSelectChannelForSlot` çağrıları `runCatching` kalkanına alındı; çift `controllers.release()` çağrısı temizlendi.
+
 ---
 
 ## 📌 Hızlı Referans & Mimari Kurallar
